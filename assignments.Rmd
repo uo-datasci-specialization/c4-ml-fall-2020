@@ -6,28 +6,23 @@ output:
     toc_float: true
 ---
 
-~~Note - There are 19 course meetings. Attendance is required at all meetings, 
-and are scored at one point each, with one point provided as a given. Thus,
-20 points for the class (10%) are associated with attendance.~~
-
 # Labs
-### 70 points (11-12 points each)
+### 100 points (20 points each)
 
-|**Lab** | **Topic**                                         | **Assigned** | **Due** | 
-|:------:| :------------------------------------------------ | :------------| :-------| 
-| 1      | [Resampling](lab1.html)                                        | 4/8/20       | 4/15/20 | 
-| 2      | [Building a predictive `lm` & Measuring performance](lab2.html)| 4/15/20      | 4/22/20 |
-| 3      | [Penalized Regression](lab3.Rmd)                              | 4/22/20      | 4/29/20 | 
-| 4      | Feature Engineering                               | 4/29/20      | 5/6/20  | 
-| 5      | [*K*-nearest neighbor](lab5.html)                              | 5/6/20       | 5/13/20 | 
-| 6      | [Random forests/bagging](lab6.html)                            | 5/20/20      | 5/27/20 | 
+|**Lab** | **Topic**                                         | **Assigned** | **Due**  | 
+|:------:| :------------------------------------------------ | :------------| :--------| 
+| 1      | Resampling                                        | 10/14/20     | 10/21/20 | 
+| 2      | Penalized Regression                              | 10/21/20     | 10/28/20 | 
+| 3      | Feature Engineering                               | 10/28/20     | 11/4/20  | 
+| 4      | *K*-nearest neighbor                              | 11/4/20      | 11/11/20 | 
+| 5      | Random forests/bagging                            | 11/18/20     | 11/25/20 | 
 
 
 # Final Project
-### 130 points
+### 150 points
 
 |**Component**           | **Due** | 
 |:-----------------------|:--------| 
-| [Preliminary fits 1]() | 4/29/20 | 
-| [Preliminary fits 2]() | 5/22/20 | 
-| [Blog post]()          | 6/10/20  | 
+| [Preliminary fits 1]() | 11/2/20 | 
+| [Preliminary fits 2]() | 11/18/20 | 
+| [Blog post]()          | 12/7/20 (by 11:59 PM)  | 
