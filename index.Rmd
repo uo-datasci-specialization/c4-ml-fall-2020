@@ -1,5 +1,5 @@
 ---
-title: "EDLD 654:Applied Machine Learning for Educational Data Science"
+title: "EDLD 654: Applied Machine Learning for Educational Data Science"
 ---
 
 This is the fourth course in a sequence of courses on educational data science (EDS), taught using the free and open-source statistical programming language [R](https://cran.r-project.org). This course focuses on applied machine learning (ML), with an emphasis on supervised learning methods that have emerged over the last several decades. The primary goal of these methods is to create models capable of making accurate predictions, which generally implies less emphasis on statistical inference.
