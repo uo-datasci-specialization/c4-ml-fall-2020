@@ -1,0 +1,108 @@
+---
+title: "w6 plots"
+author: "jftn"
+date: "3/9/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidymodels)
+library(patchwork)
+library(AmesHousing)
+
+theme_set(theme_minimal())
+
+```
+
+# Distance Plots
+
+```{r}
+ames <- make_ames()
+names(ames)
+ames %>% 
+  mutate(bath = Full_Bath + Half_Bath) %>% 
+  select(Gr_Liv_Area, bath) %>% 
+  summarize(sq_ft_mn = mean(Gr_Liv_Area, na.rm = TRUE),
+            sq_ft_sd = sd(Gr_Liv_Area, na.rm = TRUE),
+            bath_mn = mean(bath, na.rm = TRUE),
+            bath_sd = sd(bath, na.rm = TRUE))
+
+foo <- tribble(
+  ~x2, ~x1, ~grp,
+  2500, 4, "white",
+  3500, 4, "black",
+  2500, 2, "black"
+)
+
+foo <- foo %>% 
+  mutate(x2_z = (x2 - 1500)/506,
+         x1_z = (x1 - 1.95)/.804)
+
+ggplot(select(foo, x1, x2), aes(x1, x2)) +
+  geom_point() + 
+  geom_line(linetype = 2) + 
+  ylim(c(0, 4000)) +
+  annotate("text", x = 3, y = 2600, label = paste0("distance = ", round(dist(select(foo, x1, x2))[2], 2)), size = 6) +
+  annotate("text", x = 3.7, y = 3250, label = paste0("distance = ", round(dist(select(foo, x1, x2))[1], 2)), size = 6) +
+  theme(text = element_text(size = 20))
+ 
+ggplot(select(foo, x1_z, x2_z), aes(x1_z, x2_z)) +
+  geom_point() + 
+  geom_line(linetype = 2) + 
+  ylim(c(0, 4)) +
+  annotate("text", x = 1.5, y = 2.1, label = paste0("distance = ", round(dist(select(foo, x1_z, x2_z))[2], 1)), size = 6) +
+  annotate("text", x = 2.2, y = 3.5, label = paste0("distance = ", round(dist(select(foo, x1_z, x2_z))[1], 2)), size = 6) +
+  theme(text = element_text(size = 20))
+
+
+ggplot(filter(foo, grp == "black"), aes(x1, x2)) +
+  geom_point() + 
+  geom_line(linetype = 2) +
+  ylim(c(0, 4000)) +
+   theme(text = element_text(size = 20)) +
+  labs(title = paste0("Euclidian"), 
+       subtitle = paste0("distance = ", round(dist(select(foo, x1, x2), method = "euclidian")[3], 3)))
+
+ggplot(foo, aes(x1, x2)) +
+  geom_point(aes(color = grp)) + 
+  geom_line(linetype = 2) +
+  ylim(c(0, 4000)) +
+  scale_color_identity() +
+  theme(text = element_text(size = 20)) +
+  labs(title = paste0("Manhattan"), 
+       subtitle = paste0("distance = ", round(dist(select(foo, x1, x2), method = "manhattan")[3], 1)))
+
+```
+
+```{r}
+#"Autoplot" Figure for KNN regression results
+
+knn_final_res %>%
+  select(`.predictions`) %>%
+  unnest(cols = `.predictions`) %>%
+  mutate(resid_z = scale(`.pred` - score)) %>%
+  ggplot(aes(`.pred`, resid_z)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "steelblue")
+```
+
+```{r}
+#"AUTOPLOT" Figure for KNN classification results
+knn1_res %>% 
+  select(`.metrics`) %>% 
+  unnest(cols = `.metrics`) %>% 
+  group_by(neighbors, weight_func, dist_power, `.metric`) %>%
+  summarise(means = mean(`.estimate`)) %>%  
+  pivot_longer(
+    cols = c(neighbors, dist_power),
+    names_to = "tunes",
+    values_to = "Parameter Value" 
+  ) %>% 
+  ggplot(aes(`Parameter Value`, means, color = weight_func)) +
+  geom_point() +
+  facet_grid(`.metric` ~ tunes, scales = "free_x")
+```
+

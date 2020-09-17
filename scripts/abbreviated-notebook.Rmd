@@ -1,0 +1,250 @@
+---
+title: "A Starter Recipe"
+output:
+  html_notebook:
+    toc: yes
+    toc_float: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+ggplot2::theme_set(ggplot2::theme_minimal())
+```
+
+This module is designed to get you thinking about how to strategically approach
+training a deep learning (DL) model. Although finding optimal hyperparameters
+for a DL model includes a lot of artistry and patience, using a methodical
+approach can reduce overall model exploratory time. 
+
+The following steps provide a good mental model for tuning our model. Realize
+this approach does not guarantee you'll find the optimal model; however, it
+should give you a higher probability of finding a near optimal one.
+
+1. Prepare data
+2. Balance batch size with a default learning rate
+3. Tune the adaptive learning rate optimizer
+4. Add callbacks to control training
+5. Explore model capacity
+6. Regularize overfitting
+7. Repeat steps 1-6
+8. Evaluate final model results
+
+We'll demonstrate with one of the most famous benchmark data sets, MNIST. We'll
+continue working with a multi-layer perceptron (MLP); however, realize that
+these steps also translate to other DL models (i.e. CNNs, RNNs, LSTMs).
+
+# Package Requirements
+
+```{r}
+library(keras)       # for modeling
+library(tidyverse)   # for wrangling & visualization
+library(glue)        # for string literals
+```
+
+# MNIST
+
+`keras` has many built in data sets (or functions to automatically install data
+sets). Check out the available datasets with `dataset_` + tab.
+
+We're going to use the __MNIST__ data set which is the "hello world" for 
+learning deep learning! [ℹ️](http://yann.lecun.com/exdb/mnist/)
+
+```{r data}
+mnist <- dataset_mnist()
+str(mnist)
+```
+
+Our training images (aka features) are stored as 3D arrays
+
+* 60,000 images consisting of a...
+* 28x28 matrix with...
+* values ranging from 0-255 representing gray scale pixel values.
+
+```{r features}
+# 60K images of 28x28 pixels
+dim(mnist$train$x)
+
+# pixel values are gray scale ranging from 0-255
+range(mnist$train$x)
+```
+
+Check out the first digit
+
+```{r first-digit}
+digit <- mnist$train$x[1,,]
+digit
+```
+
+Lets plot the first digit and compare to the above matrix
+
+```{r plot-first-digit}
+plot(as.raster(digit, max = 255))
+```
+
+Now lets check out the first 100 digits
+
+```{r plot-first-100-digits}
+par(mfrow = c(10, 10), mar = c(0,0,0,0))
+for (i in 1:100) {
+  plot(as.raster(mnist$train$x[i,,], max = 255))
+}
+```
+
+# Prepare Data
+
+When we work with keras:
+
+* training and test sets need to be independent
+* features and labels (aka target, response) need to be independent
+* use `%<-%` for ___object unpacking___ (see `?zeallot::%<-%`)
+
+```{r extract-train-test}
+c(c(train_images, train_labels), c(test_images, test_labels)) %<-% mnist
+
+# the above is the same as
+# train_images <- mnist$train$x
+# train_labels <- mnist$train$y
+# test_images <- mnist$test$x
+# test_labels <- mnist$test$y
+```
+
+## Shape into proper tensor form
+
+The shape of our data is dependent on the type of DL model we are training. MLPs
+require our data to be in a 2D tensor (aka matrix); however, our data are
+currently in a 3D tensor.
+
+We can reshape our tensor from 3D to 2D. Much like a matrix can be flattened to
+a vector:
+
+```{r}
+m <- matrix(1:9, ncol = 3)
+m
+
+# flattened matrix
+as.vector(m)
+```
+
+We can reshape a 3D array to a 2D array with `array_reshape()`
+
+![](images/reshape.png)
+
+```{r reshape-to-2D-tensor}
+# reshape 3D tensor (aka array) to a 2D tensor (aka matrix)
+train_images <- array_reshape(train_images, c(60000, 28 * 28))
+test_images <- array_reshape(test_images, c(10000, 28 * 28))
+
+# our training data is now a matrix with 60K observations and
+# 784 features (28 pixels x 28 pixels = 784)
+str(train_images)
+```
+
+Since we are dealing with a multi-classification problem where the target ranges
+from 0-9, we'll reformat with `to_categorical()`. 
+
+__Note__: column 1 refers to the digit "0", column 2 refers to the digit "1", etc.
+
+```{r}
+train_labels <- to_categorical(train_labels)
+test_labels <- to_categorical(test_labels)
+
+head(train_labels)
+```
+
+## Stabilize learning by data scaling
+
+When applying DL models, our feature values should not be relatively large
+compared to the randomized initial weights _and_ all our features should take
+values in roughly the same range. 
+
+> ___When features have large or widely varying values, large gradient updates can
+be triggered that will prevent the network from converging___
+
+__Tips__:
+
+1. When all features have the same value range (i.e. images), we can standardize
+   values between 0-1.
+
+2. When features varying in range from one another (i.e. age, height, longitude)
+   normalize each feature to have mean of 0 and standard deviation of 1 (?`scale()`)
+
+```{r}
+# all our features (pixels) range from 0-255
+range(train_images)
+```
+
+```{r}
+# standardize train and test features
+train_images <- train_images / 255
+test_images <- test_images / 255
+```
+
+## Randomize data
+
+Although I know that this data is not ordered, we should always get in the habit
+of randomizing our data so that our train and validation datasets are properly
+represented.
+
+```{r}
+obs <- nrow(train_images)
+set.seed(123)
+randomize <- sample(seq_len(obs), size = obs, replace = FALSE)
+train_images <- train_images[randomize, ]
+train_labels <- train_labels[randomize, ]
+```
+
+We're finally ready to train some DL models!!
+
+## Daniel Edits
+All of the above is from Brad, and I really recommend you checkout the full
+notebook. It's a great place to get started. But because I know we'll be short
+on time, I wanted to jump ahead a bit. 
+
+In the chunk below, fit a multi-layer perceptron network to try to predict
+which digit is represented by each image (i.e., each row of the data matrix).
+
+The model should have the following characteristics:
+* A single hidden layer with 512 perceptrons
+* A ReLU activation function for the hidden layer and a *softmax* activation 
+  function for the output layer
+* Make sure you specify your output layer to have 10 perceptrons (one for each
+  digit you are predicting)
+* Start by optimizing with stochastic gradient descent with the defalut batch 
+  size (32). Vary the batch size and add momentum to your learning rate to see
+  if you can improve fit.
+* Use callbacks to reduce the learning rate on a plateau
+* Once you have completed the above, if there is still time, try varying your
+  model capacity to see if you can improve fit
+
+**Hint** Careful about not overwriting objects. When you compile, for example,
+you are actually updating the model object even if you're not re-assigning it.
+This means you can't re-run a model by just running re-running the fit. You 
+have to first re-define the model, then re-compile it, then re-fit it.
+
+```{r model}
+model <- keras_model_sequential() %>%
+  layer_dense(units = 512, activation = "relu", input_shape = ncol(train_images)) %>%
+  layer_dropout(0.3) %>%                            # regularization parameter
+  layer_dense(units = 512, activation = "relu") %>%
+  layer_dropout(0.3) %>%                           # regularization parameter
+  layer_dense(units = 10, activation = "softmax")
+
+model %>% compile(
+  loss = "categorical_crossentropy",
+  optimizer = optimizer_sgd(lr = 0.1, momentum = 0.9),
+  metrics = "accuracy"
+)
+
+history <- model %>% fit(
+  train_images, train_labels,
+  validation_split = 0.2,
+  batch_size = 128,
+  epochs = 50,
+  callback = list(
+    callback_early_stopping(patience = 3, restore_best_weights = TRUE, min_delta = 0.0001),
+    callback_reduce_lr_on_plateau(patience = 1, factor = 0.1)
+    )
+  )
+```

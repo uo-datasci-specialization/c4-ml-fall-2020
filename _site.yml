@@ -1,7 +1,7 @@
-name: Communicating and Transforming Data
+name: Machine Learning for Educational Data Science
 output_dir: '.'
 navbar:
-  title: EDUC 610
+  title: EDLD 654
   left:
   - text: Slides, Readings, & Schedule
     href: schedule.html
@@ -11,9 +11,9 @@ navbar:
   - text: Syllabus
     href: site-syllabus.html
   - text: Kaggle
-    href: https://www.kaggle.com/c/edld-654-spring-2020
+    href: https://www.kaggle.com/c/edld-654-fall-2020/overview
   - icon: fa-github
-    href: https://github.com/uo-datasci-specialization/c4-ml-2020
+    href: https://github.com/uo-datasci-specialization/c4-ml-fall-2020
 output:
   html_document:
     theme: journal
