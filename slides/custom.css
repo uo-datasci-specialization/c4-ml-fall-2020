@@ -1,0 +1,88 @@
+.mjx-chtml { font-size: 120% !important; }
+
+.ital {font-style: italic;}
+
+table {
+	font-size: 1.1rem;
+}
+
+.inverse .footnote {
+  border-top: 1px solid #E1E000;
+  padding-top: 5px;
+  color: #fff;
+  font-size: 0.2em;
+  bottom: 1em;
+}
+
+.b {
+  color: #4f8dde;
+}
+
+.r {
+  color: #de4fbf;
+}
+.g {
+  color: #98a2ae;
+}
+
+.gr {
+  color: #2dc41c;
+}
+
+.small {
+  font-size: 0.75rem;
+}
+.remark-code-line-highlighted { 
+	background-color: #3bac39; 
+	color: #fff; 
+	font-weight: 900; 
+}
+
+.remark-code-line-highlighted .hljs-string {
+	color: #FFF200 !important;
+}
+
+.remark-code-line-highlighted .hljs-literal {
+  color: #f486cb !important;
+  font-weight: 400;
+}
+
+.remark-code-line-highlighted .hljs-comment {
+  color: #c2ebc2 !important;
+}
+
+.remark-code-line-highlighted .hljs-number {
+  color: #143913 !important;
+}
+
+.bolder { font-weight: 900; }
+
+.major-emph-green {
+  display: block;
+  text-align: center;
+  font-family: 'Philosopher', sans-serif;
+  width: 110%;
+  background-color: #007935;
+  color: #eee;
+  border-top: 3px solid #FEE11A;
+  border-bottom: 3px solid #FEE11A;
+  padding: 10px 50px;
+  margin: 0px -100px 0px;
+  font-weight: bolder;
+  font-size: 175%;
+}
+
+.caution {
+  display: block;
+  text-align: center;
+  font-family: 'Philosopher', sans-serif;
+  width: 110%;
+  background-color: #d45454;
+  color: #eee;
+  border-top: 3px solid #000;
+  border-bottom: 3px solid #000;
+  padding: 10px 50px;
+  margin: 0px -100px 0px;
+  font-weight: bolder;
+  font-size: 175%;
+}

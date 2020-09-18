@@ -1,0 +1,706 @@
+---
+title: "Inference versus prediction"
+subtitle: "And a basic intro to some topics in ML"
+author: "Daniel Anderson & Joe Nese"
+date: "Week 2, Class 1"
+output:
+  xaringan::moon_reader:
+    css: ["default", "uo", "uo-fonts", "hygge", "custom.css"]
+    lib_dir: libs
+    nature:
+      highlightStyle: atelier-dune-light
+      highlightLines: true
+      countIncrementalSlides: false
+      beforeInit: "https://platform.twitter.com/widgets.js"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(fig.width = 13, 
+                      message = FALSE, 
+                      warning = FALSE,
+                      echo = TRUE)
+
+library(tidyverse)
+
+update_geom_defaults('path', list(size = 3, color = "cornflowerblue"))
+update_geom_defaults('point', list(size = 5, color = "gray60"))
+theme_set(theme_minimal(base_size = 25))
+```
+
+# Agenda 
+* Modeling for inference vs prediction
+
+
+--
+* Train and test datasets
+
+
+--
+* Objective functions (briefly)
+
+
+--
+* Bias-Variance tradeoff of and overfitting (briefly)
+
+
+--
+* Supervised vs unsupervised learning
+
+
+--
+* Regression vs Classification
+
+
+--
+* Kaggle
+
+---
+# What's the difference?
+Focus of most stats classes is on inference
+
+--
+### Example RQ's
+* What is the relation between the proportion of students eligible for 
+  free/reduced price lunch and a school's Annual Performance Index?
+
+
+--
+* What is the effect of a reading intervention for struggling readers, as
+  compared to treatment as usual?
+
+
+--
+* To what extent does the effect of internalizing/externalizing behavior on
+  sexual risk depend upon their adverse childhood experiences?
+
+---
+# Standard errors
+* One of the defining features of modeling for inference is the estimation of a
+  standard error for a given estimate
+
+
+--
+* How certain are we of the population-level estimate?
+
+
+---
+# Prediction
+* Rather than  inferring population-level values, the focus shifts to 
+  building a "machine" that produces predictions for us on new (unseen) data
+
+
+--
+* Less focus on population-level values, or even model interpretability.
+
+
+--
+* Primary focus - how well does our model perform?
+
+
+---
+# Another way to think of it
+### Our linear regression model
+
+$$\color{#157CAE}{\text{Y}_{i}} = \text{X}_{i} \color{#DB1593}{\beta} + e_i$$
+
+
+--
+When modeling for inference, we want an unbiased (consistent) and precise estimate $\color{#DB1593}{\hat\beta}$.
+
+--
+
+For prediction, we shift our focus to accurately estimating outcomes.
+
+
+--
+
+In other words, how can we best construct $\color{#157CAE}{\hat{\text{Y}}_{i}}$?
+
+---
+## ... so?
+
+So we want "nice"-performing estimates $\hat y$ instead of $\hat\beta$.
+
+.r[Q]: Can't we just use the same methods (_i.e._, OLS)?
+
+--
+
+.b[A]: It depends.
+
+
+--
+ How well does your .bolder[.r[linear]]-regression model approximate the underlying data? (And how do you plan to select your model?)
+
+
+---
+# Why might we want to do this?
+* Forecasting is useful, particularly for making individual-level decisions
+
+
+--
+* What is the likelihood that a kindergarten student will be reading on
+  "grade-level" by third grade?
+
+
+--
+* What is the likelihood that a given student has a disability?
+
+
+--
+* What is the likelihood that a given student will drop out of high-school?
+
+
+--
+### In each case:
+* Build a predictive model
+* Use the model to forecast/predict 
+* Update the forecast/prediction as more data are collected
+* Taylor instruction/intervention to these forecasts
+
+
+---
+# Example forecast plot
+
+```{r forecast, echo = FALSE}
+library(forecast)
+USAccDeaths %>%
+  tbats() %>%
+  forecast() %>%
+  autoplot() + 
+  ggtitle("")
+```
+
+
+---
+# A warning
+
+![](https://media.giphy.com/media/A6H1A9rhetsXK/giphy.gif)
+
+---
+* Lots of misunderstanding out there about what predictive modeling is, and 
+  many people will disparage it
+
+
+--
+* .bolder[My view:] 
+  + these people generally have an incomplete (at best) understanding of
+    predictive modeling
+  + Often have antiquated views of the techniques used in predictive 
+    modeling (i.e., not about maxing out $R^2$)
+
+--
+### Bottom line
+* Predictive modeling has been used with enormous success 
+* These models are used in production business environments all the time
+* These modeling techniques impact all of our lives on a daily basis
+
+---
+class: inverse center middle
+
+# The antiquated method
+
+---
+# Stepwise regression
+* Often when people bad-talk predictive modeling, it's because their thinking 
+  of stepwise regression
+
+
+--
+### Basic approach
+* Throw a bunch of variables at a problem, only keep those that are significant
+
+
+---
+# Approaches
+* **Forward selection:** Start with no variables, add one at a time, but only
+  keep if significant
+
+
+--
+* **Backward selection:** Start with all variables, remove one at a time based
+  on the variable that is "least significant"
+
+
+--
+* **Stepwise selection:** Sequentially add predictor variables based on "most
+  significant". After each addition, cycle through and remove an 
+  non-significant variables
+
+
+--
+### Goal
+* Find the optimal subset of variables that could be used to predict the 
+  outcome
+
+---
+# Reasons for critique
+* $p$ values were not designed for variable selection decisions! 
+
+* Even if we wanted to use them, why stick with 0.05, rather than what works best
+for the given problem?
+
+
+--
+### More importantly
+* People use this model **for inference** which is straight-up bonkers
+
+
+--
+### Why are we talking about this?
+* It actually can still be an okay method if all you care about is variable selection. 
+
+* Make you aware that others may use it inappropriately, and to caution you (in the strongest way possible) not to use it for inference.
+
+---
+# Stepwise criteria
+* Applying different criteria (forward, backward, etc.) can lead to 
+different "optimal" variable combinations
+
+
+--
+* From a predictive modeling framework, this isn't really a big deal - we only
+care about which model performs best.
+
+
+--
+* From an inference perspective, it's a REALLY big deal - that's why we don't
+use these models for inference 
+  + Little to no theory guiding decisions, except which variables will be
+    included in the automatic procedure (which is often all available variables)
+
+---
+class: inverse center middle
+# How do we determine "performance"
+
+---
+# Model performance criteria
+* If the primary concern is prediction, what do we care about the most?
+
+--
+
+.center[### How close our predictions to the observed data?]
+
+
+--
+.Large[🤨]
+
+* Wait, isn't that basically the same thing as residual variance?
+
+
+--
+### No! 
+* Why? We want to know how far off our model is for .bolder[.b[cases outside our sample]!]
+
+---
+# Test/Train datasets
+
+* Our goal is to maximize .bolder[.b[out-of-sample]] predictive accuracy. How can 
+  we get an estimate of that? Leave out part of the sample.
+
+--
+
+1. Split the raw data into "training" and "test" datasets
+
+
+--
+2. Build a model on the training dataset
+
+
+--
+3. Do everything you can to make the model the "best" you can
+
+
+--
+4. When you've settled on a .bolder[final] model, use the parameter estimates
+  to predict the outcome on the test data
+
+---
+# Quick example
+
+```{r train-test}
+library(tidyverse)
+set.seed(8675309)
+train <- mtcars %>%
+  sample_frac(.8)
+
+test <- anti_join(mtcars, train)
+nrow(train)
+nrow(test)
+```
+
+---
+# Fit model(s)
+* Only use the training data
+
+```{r train-mods}
+m1 <- lm(mpg ~ hp, train)
+m2 <- lm(mpg ~ hp + disp, train)
+m3 <- lm(mpg ~ hp + disp + cyl, train)
+sundry::aic_weights(m1, m2, m3)
+```
+
+--
+### Settle on a model then...
+
+---
+# Predict new cases
+
+```{r test_preds}
+test <- test %>%
+  mutate(pred_mpg = predict(m2, newdata = test))
+
+test
+```
+
+---
+# Calculate differences
+
+```{r diff}
+test %>%
+  mutate(diff = pred_mpg - mpg)
+```
+
+--
+What's the average difference? 
+
+
+--
+<img src="https://datainsure.com/wp-content/uploads/2018/04/ZERO-01.png"
+height="175px" />
+
+---
+# What do we do?
+
+--
+* Square then average the values
+
+--
+### Mean square error
+
+.Large[
+$$
+MSE = \frac{1}{n}\sum(y\_i - \hat{y\_i})^2
+$$
+]
+
+
+--
+### Root mean square error
+
+.Large[
+$$
+RMSE = \sqrt{\frac{1}{n}\sum(y\_i - \hat{y\_i})^2}
+$$
+]
+
+
+---
+# Objective function
+* MSE and RMSE are examples of **objective functions**, 
+**cost functions**, or **loss functions**. 
+
+* Goal of ML - optimize (maximize or minimize) the objective function
+
+* These are all [similar but not equivalent](https://stats.stackexchange.com/questions/179026/objective-function-cost-function-loss-function-are-they-the-same-thing) terms
+
+
+---
+# Evaluate 
+
+```{r mse}
+test %>%
+  summarize(mse = mean((pred_mpg - mpg)^2))
+```
+
+```{r rmse}
+test %>%
+  summarize(rmse = sqrt(mean((pred_mpg - mpg)^2)))
+```
+
+--
+* Note, you can only evaluate against the test set once! Otherwise, your test 
+dataset becomes part of your training dataset.
+
+
+--
+* Instead, you do this process over and over **with your training dataset** through a process called $k$-fold cross-validation, which we'll talk about next week.
+
+---
+## $k$-fold CV basics
+
+* Split the data into multiple little samples
+
+  
+--
+* Leave out one piece, try different models on the other pieces, predict on left out piece
+
+
+--
+* Evaluate against objective function
+
+
+--
+### Joe will cover this more next week
+
+---
+class: inverse center middle
+# Overfitting
+### And thinking more about functional form
+
+.Large[
+$$
+\hat{Y} = f(\mathbf{X})
+$$
+]
+
+
+---
+# Predicting income
+* Imagine we are trying to predict respondents' income. 
+
+
+--
+* In this case, the data have been simulated, so .b[we know] the 
+  functional form
+
+
+--
+
+.center[
+
+<img src="img/true-functional-form.png" height="350px" />
+
+]
+
+---
+# We could fit a linear relation
+
+.center[
+
+<img src="img/linear-relation.png" height="450px" />
+
+]
+
+---
+# Or a more complex model
+
+.center[
+
+<img src="img/spline-good.png" height="450px" />
+
+]
+
+---
+# Or a really complicated model
+
+.center[
+
+<img src="img/spline-bad.png" height="450px" />
+
+]
+
+---
+* The linear model doesn't fit the observed data as well .gray[(it is
+  slightly underfit)]
+
+
+--
+* The really complex model model fits the observed data nearly perfectly 
+  .gray[(it is overfit)]
+
+
+--
+* The middle model fits the observed data well, and matches the underlying
+  function well. 
+
+--
+* We know this because we know the underlying function - usually we do not.
+
+---
+# Overfitting in action
+
+.center[
+
+![](img/mcelreath-fig-6.3.gif)
+
+]
+
+
+---
+class: inverse center middle
+# Bias-Variance Trade-off
+
+---
+# Definitions
+* Bias: How well does the model represent the observed data?
+
+
+--
+* Variance: How much does the model change from sample to sample?
+
+
+--
+### Linear models...
+Tend to have low variance
+
+--
+### But also...
+Can have high bias, if the underlying functional form is not *truly* linear
+
+
+
+---
+# Highly flexible models
+* Tend to have low bias (representing the observed data well), but can
+  easily overfit, leading to high variance
+
+
+--
+### The goal
+* Balance the bias-variance trade-off
+
+--
+* Note, this is an incredibly useful perspective **even if your goal is
+  to model for inference.**
+
+
+---
+# More gifs!
+Why the linear model has low variance
+
+![](img/linear.gif)
+
+
+---
+Why it may have high bias
+
+![](img/linear-sin.gif)
+
+
+---
+# A crazy polynomial model
+Why more complicated models have higher variance
+![](img/cray-poly.gif)
+
+
+---
+Why it may have lower bias
+
+![](img/cray-poly-sin.gif)
+
+---
+class: inverse center middle
+# Regression versus classification
+
+--
+# Supervised versus unsupervised learning
+
+
+---
+# What are you trying to predict?
+* Continous (or approximately continous) response variable?
+
+  + Regression problem
+ 
+
+--
+* Categorical response variable?
+
+  + Classification problem
+  
+
+--
+* Simplest examples: 
+  
+  + Linear regression 
+  
+--
+  .b[regression]
+  
+
+--
+  + Logistic regression
+  
+--
+  .r[classification]
+  
+  
+--
+  + Ordinal or multinomial regression
+
+--
+  .r[classification]
+
+
+---
+# Supervised/unsupervised
+* Supervised: You have .b[*labeled*] data
+
+
+--
+### What does labeled mean?
+
+
+--
+* Just that you have scores or classifications or whatever on the thing you're trying to get the machine to "learn".
+
+
+--
+* Unsupervised: No labels
+
+---
+# Supervised/unsupervised
+* Supervised learning is fairly straightforward - you have values of some outcome for a sample. Try to build a model to predict the values people outside of your sample would have.
+
+* Unsupervised
+	- Clustering problems
+	- Latent class/mixture modeling
+	- No way to "know" a case belongs to a certain class/response level
+
+  
+---
+# Pop quiz
+
+`r countdown::countdown(minutes = 5, top = 0)`
+
+<br/>
+
+Talk with your neighbor to determine whether each of the following is a .b[regression] or .r[classification] problem .bolder[AND] whether it is a .b[supervised] or .r[unsupervised] problem (or how it could be framed as one versus the other).
+
+* Develop an algorithm that determines if students will be reading on grade level by the third grade, according to a statewide test.
+* Predict which students will be at risk for reading difficulties.
+* Estimate who is most at risk to drop out of high school.
+* Determine objects in an image
+* Recognize handwriting
+* Estimate the likelihood of having a learning disability
+* Score a narrative essay
+
+---
+class: inverse middle center
+background-image:url(img/kaggle.png)
+background-size:contain
+
+
+---
+# Let's practice!
+[kaggle](https://www.kaggle.com/c/house-prices-advanced-regression-techniques)
+* Competitive data science platform  
+
+
+--
+* Ways for companies to crowdsource problems
+
+
+--
+* Can compete individually or in teams
+
+
+--
+* Great way to learn! We'll be using it all term long.
+
+---
+class: inverse center middle
+# Demo
+Let's try a model together!
+
+
