@@ -4,6 +4,7 @@
     <title>Inference versus prediction</title>
     <meta charset="utf-8" />
     <meta name="author" content="Daniel Anderson &amp; Joe Nese" />
+    <script src="libs/header-attrs-2.3/header-attrs.js"></script>
     <link href="libs/remark-css-0.0.1/default.css" rel="stylesheet" />
     <link href="libs/remark-css-0.0.1/uo.css" rel="stylesheet" />
     <link href="libs/remark-css-0.0.1/uo-fonts.css" rel="stylesheet" />
@@ -39,7 +40,7 @@ class: center, middle, inverse, title-slide
 
 
 --
-* Bias-Variance tradeoff of and overfitting (briefly)
+* Bias-Variance tradeoff of and overfitting
 
 
 --
@@ -49,9 +50,6 @@ class: center, middle, inverse, title-slide
 --
 * Regression vs Classification
 
-
---
-* Kaggle
 
 ---
 # What's the difference?
@@ -96,6 +94,9 @@ Focus of most stats classes is on inference
 * Primary focus - how well does our model perform?
 
 
+--
+* Standard errors of your coefficients are generally not as important as the model prediction error
+
 ---
 # Another way to think of it
 ### Our linear regression model
@@ -133,7 +134,7 @@ So we want "nice"-performing estimates `\(\hat y\)` instead of `\(\hat\beta\)`.
 
 ---
 # Why might we want to do this?
-* Forecasting is useful, particularly for making individual-level decisions
+* Forecasting is useful
 
 
 --
@@ -193,7 +194,7 @@ class: inverse center middle
 
 ---
 # Stepwise regression
-* Often when people bad-talk predictive modeling, it's because their thinking 
+* Often when people bad-talk predictive modeling, it's because they're thinking 
   of stepwise regression
 
 
@@ -215,7 +216,7 @@ class: inverse center middle
 
 --
 * **Stepwise selection:** Sequentially add predictor variables based on "most
-  significant". After each addition, cycle through and remove an 
+  significant". After each addition, cycle through and remove 
   non-significant variables
 
 
@@ -228,7 +229,7 @@ class: inverse center middle
 # Reasons for critique
 * `\(p\)` values were not designed for variable selection decisions! 
 
-* Even if we wanted to use them, why stick with 0.05, rather than what works best
+* Even if we wanted to use them, why use `\(\alpha = 0.05\)`, rather than what works best
 for the given problem?
 
 
@@ -305,6 +306,9 @@ class: inverse center middle
 --
 4. When you've settled on a .bolder[final] model, use the parameter estimates
   to predict the outcome on the test data
+  
+--
+5. Use an objective function to evaluate how far off your predictions were from the real values
 
 ---
 # Quick example
@@ -352,7 +356,9 @@ sundry::aic_weights(m1, m2, m3)
 ```
 
 --
-### Settle on a model then...
+### Settle on a model 
+
+It's basically a toss-up between `m2` and `m3`. I'll go with the more parsimonious model.
 
 ---
 # Predict new cases
@@ -374,6 +380,13 @@ test
 ## 5 19.7   6 145.0 175 3.62 2.770 15.50  0  1    5    6 22.43303
 ## 6 21.4   4 121.0 109 4.11 2.780 18.60  1  1    4    2 24.84235
 ```
+
+--
+Consider *how* you want to evaluate how well your model performed (what objective function to use).
+
+
+--
+In this case, we'll look at the root mean square residual (RMSE), which we want to minimize
 
 ---
 # Calculate differences
@@ -431,7 +444,7 @@ $$
 ---
 # Objective function
 * MSE and RMSE are examples of **objective functions**, 
-**cost functions**, or **loss functions**. 
+**cost functions**, or **loss functions**. There are many of these, which we'll talk more about later in the term.
 
 * Goal of ML - optimize (maximize or minimize) the objective function
 
@@ -577,16 +590,21 @@ class: inverse center middle
 # Bias-Variance Trade-off
 
 ---
-# Definitions
-* Bias: How well does the model represent the observed data?
+# Types of errors in prediction
+&lt;br/&gt;
+
+--
+### Bias
+How well does the model represent the observed data?
 
 
 --
-* Variance: How much does the model change from sample to sample?
+### Variance
+How much does the model change from sample to sample?
 
 
---
-### Linear models...
+---
+# Linear models
 Tend to have low variance
 
 --
@@ -597,13 +615,17 @@ Can have high bias, if the underlying functional form is not *truly* linear
 
 ---
 # Highly flexible models
-* Tend to have low bias (representing the observed data well), but can
-  easily overfit, leading to high variance
+Tend to have low bias (representing the observed data well)
+
+--
+### But also...
+Can easily overfit, leading to high variance
 
 
 --
 ### The goal
 * Balance the bias-variance trade-off
+
 
 --
 * Note, this is an incredibly useful perspective **even if your goal is
@@ -635,6 +657,87 @@ Why it may have lower bias
 ![](img/cray-poly-sin.gif)
 
 ---
+# More precise definitions
+
+.pull-left[
+### Bias
+* Difference between the .gray[(average, oftentimes)] prediction of our model and the "true" value
+
+* Equivalent to statistical bias
+
+* How well the model fit the underlying structure of the data?
+
+* Low bias = closer to “truth”
+
+* High bias = systematically ignores structure in the data
+
+]
+
+
+--
+.pull-right[
+### Variance
+* Variability of the model predictions for a given point
+* Variability of predictions if the model were repeated with small differences in the data 
+
+* Degree that model predictions are influenced by these changes = variance
+
+* High variance models generalize to unseen data poorly
+
+]
+
+---
+background-image:url(https://sebastianraschka.com/images/blog/2016/model-evaluation-selection-part2/visual_bias_variance.png)
+background-size: contain
+
+
+---
+background-image:url(https://bradleyboehmke.github.io/HOML/02-modeling-process_files/figure-html/modeling-process-bias-model-1.png)
+background-size: contain
+# Low variance - moderate bias
+
+.footnote[https://bradleyboehmke.github.io/HOML/process.html#bias-var]
+---
+background-image:url(https://bradleyboehmke.github.io/HOML/02-modeling-process_files/figure-html/modeling-process-variance-model-1.png)
+background-size: contain
+# High variance - low bias
+
+.footnote[https://bradleyboehmke.github.io/HOML/process.html#bias-var]
+
+---
+# General model characteristics
+
+### Less flexible, but low variance 
+* Linear regression
+  * Ridge/lasso
+* Partial least squares
+
+--
+### More flexible, but higher variance
+* `\(KNN\)`
+* Decision trees
+* Neural networks
+
+---
+background-image:url(https://cdn.analyticsvidhya.com/wp-content/uploads/2020/08/Copy-of-Add-a-subheading5.png)
+background-size: contain
+
+.footnote[https://www.analyticsvidhya.com/blog/2020/08/bias-and-variance-tradeoff-machine-learning/]
+
+---
+# Strategies for optimizing
+### Hyperparameter tuning
+Many machine learning models include parameters that must be set by the analyst, which control the flexibility of the model
+  
+### Regularization
+Reduce how much the model learns. Many different strategies, including
+* Penalties on model fit
+  + Highly complex models are penalized higher, leading to less likelihood of being selected
+* Shrinkage
+  + Systematically reduce the influence of a given parameter, or sets of parameters
+* Dropout
+  + Randomly drop trees/nodes in the learning process
+---
 class: inverse center middle
 # Regression versus classification
 
@@ -644,7 +747,7 @@ class: inverse center middle
 
 ---
 # What are you trying to predict?
-* Continous (or approximately continous) response variable?
+* Continuous (or approximately continuous) response variable?
 
   + Regression problem
  
@@ -688,7 +791,7 @@ class: inverse center middle
 
 
 --
-* Just that you have scores or classifications or whatever on the thing you're trying to get the machine to "learn".
+* Just that you have scores or classifications or whatever for the thing you're trying to get the machine to "learn".
 
 
 --
@@ -707,49 +810,33 @@ class: inverse center middle
 ---
 # Pop quiz
 
-<div class="countdown" id="timer_5f64d337" style="top:0;right:0;" data-warnwhen="0">
+<div class="countdown" id="timer_5f762a20" style="top:0;right:0;" data-warnwhen="0">
 <code class="countdown-time"><span class="countdown-digits minutes">05</span><span class="countdown-digits colon">:</span><span class="countdown-digits seconds">00</span></code>
 </div>
 
 &lt;br/&gt;
 
-Talk with your neighbor to determine whether each of the following is a .b[regression] or .r[classification] problem .bolder[AND] whether it is a .b[supervised] or .r[unsupervised] problem (or how it could be framed as one versus the other).
+Talk with your neighbor to determine whether each of the following is a .b[regression] or .r[classification] problem .bolder[AND] whether it is a .b[supervised] or .r[unsupervised] problem.
+
+Note - there is no "correct" answer for some of these, it depends on how it's framed
 
 * Develop an algorithm that determines if students will be reading on grade level by the third grade, according to a statewide test.
 * Predict which students will be at risk for reading difficulties.
 * Estimate who is most at risk to drop out of high school.
-* Determine objects in an image
-* Recognize handwriting
+* Determine specific objects in an image
+* Decode handwriting to text
 * Estimate the likelihood of having a learning disability
-* Score a narrative essay
-
----
-class: inverse middle center
-background-image:url(img/kaggle.png)
-background-size:contain
 
 
 ---
-# Let's practice!
-[kaggle](https://www.kaggle.com/c/house-prices-advanced-regression-techniques)
-* Competitive data science platform  
+class: inverse
+# Next class
+Ethics in Machine Learning.
+Guest lecture: [Sondra Stegenga](https://www.linkedin.com/in/sondra-stegenga/)
 
+&lt;br/&gt;
 
---
-* Ways for companies to crowdsource problems
-
-
---
-* Can compete individually or in teams
-
-
---
-* Great way to learn! We'll be using it all term long.
-
----
-class: inverse center middle
-# Demo
-Let's try a model together!
+.center[![](https://pbs.twimg.com/profile_images/1044295428882161664/YZCzN1i__400x400.jpg)]
     </textarea>
 <style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
 <script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>

@@ -14,6 +14,10 @@ table {
   bottom: 1em;
 }
 
+.inverse a {
+  color: #7ab4ff;
+}
+
 .b {
   color: #4f8dde;
 }
