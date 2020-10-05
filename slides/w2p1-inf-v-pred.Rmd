@@ -50,6 +50,27 @@ theme_set(theme_minimal(base_size = 25))
 --
 * Regression vs Classification
 
+---
+# Check in and announcements
+
+* How's the start of your term going?
+
+* Anything unclear or that you'd like to discuss?
+
+* Please remember to email us with your group!
+  + Ideally, please have this settled by the end of today
+
+---
+![](img/sds-event.png)
+
+---
+![](img/sds-event-abstract.png)
+
+[RSVP Here](https://urldefense.com/v3/__https:/oregon.qualtrics.com/jfe/form/SV_bx4862NYcmcnNg9__;!!C5qS4YX3!XOuDAPFLxffMTm3Bs5-MN0EESFaOjwxJj5DQioA89VGClJ10O5RhT0dB6ihwsd4$)
+
+---
+class: inverse center middle
+# Inference vs Prediction
 
 ---
 # What's the difference?
