@@ -11,7 +11,7 @@ output:
 
 |**Lab** | **Topic**                                         | **Assigned** | **Due**  | 
 |:------:| :------------------------------------------------ | :------------| :--------| 
-| 1      | Resampling                                        | 10/14/20     | 10/21/20 | 
+| 1      | [Resampling](lab1.Rmd)                                        | 10/14/20     | 10/21/20 | 
 | 2      | Penalized Regression                              | 10/21/20     | 10/28/20 | 
 | 3      | Feature Engineering                               | 10/28/20     | 11/4/20  | 
 | 4      | *K*-nearest neighbor                              | 11/4/20      | 11/11/20 | 

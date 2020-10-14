@@ -11,7 +11,7 @@
 
 
 
-<title>Assignments</title>
+<title>Lab 1</title>
 
 <script src="site_libs/jquery-1.11.3/jquery.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -389,86 +389,65 @@ div.tocify {
 
 
 
-<h1 class="title toc-ignore">Assignments</h1>
+<h1 class="title toc-ignore">Lab 1</h1>
+<h3 class="subtitle">Resampling</h3>
+<h4 class="date">Assigned 10/14/20, Due 10/21/20</h4>
 
 </div>
 
 
-<div id="labs" class="section level1">
-<h1>Labs</h1>
-<div id="points-20-points-each" class="section level3">
-<h3>100 points (20 points each)</h3>
-<table>
-<thead>
-<tr class="header">
-<th align="center"><strong>Lab</strong></th>
-<th align="left"><strong>Topic</strong></th>
-<th align="left"><strong>Assigned</strong></th>
-<th align="left"><strong>Due</strong></th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="center">1</td>
-<td align="left"><a href="lab1.Rmd">Resampling</a></td>
-<td align="left">10/14/20</td>
-<td align="left">10/21/20</td>
-</tr>
-<tr class="even">
-<td align="center">2</td>
-<td align="left">Penalized Regression</td>
-<td align="left">10/21/20</td>
-<td align="left">10/28/20</td>
-</tr>
-<tr class="odd">
-<td align="center">3</td>
-<td align="left">Feature Engineering</td>
-<td align="left">10/28/20</td>
-<td align="left">11/4/20</td>
-</tr>
-<tr class="even">
-<td align="center">4</td>
-<td align="left"><em>K</em>-nearest neighbor</td>
-<td align="left">11/4/20</td>
-<td align="left">11/11/20</td>
-</tr>
-<tr class="odd">
-<td align="center">5</td>
-<td align="left">Random forests/bagging</td>
-<td align="left">11/18/20</td>
-<td align="left">11/25/20</td>
-</tr>
-</tbody>
-</table>
+<div id="read-in-the-train.csv-data." class="section level3">
+<h3>Read in the <code>train.csv</code> data.</h3>
 </div>
+<div id="initial-split" class="section level3">
+<h3>1. Initial Split</h3>
+<p>Split the data into a training set and a testing set as two named objects. Produce the <code>class</code> type for the initial split object and the training and test sets.</p>
 </div>
-<div id="final-project" class="section level1">
-<h1>Final Project</h1>
-<div id="points" class="section level3">
-<h3>150 points</h3>
-<table>
-<thead>
-<tr class="header">
-<th align="left"><strong>Component</strong></th>
-<th align="left"><strong>Due</strong></th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left"><a href="">Preliminary fits 1</a></td>
-<td align="left">11/2/20</td>
-</tr>
-<tr class="even">
-<td align="left"><a href="">Preliminary fits 2</a></td>
-<td align="left">11/18/20</td>
-</tr>
-<tr class="odd">
-<td align="left"><a href="">Blog post</a></td>
-<td align="left">12/7/20 (by 11:59 PM)</td>
-</tr>
-</tbody>
-</table>
+<div id="use-code-to-show-the-proportion-of-the-train.csv-data-that-went-to-each-of-the-training-and-test-sets." class="section level3">
+<h3>2. Use code to show the proportion of the <code>train.csv</code> data that went to each of the training and test sets.</h3>
 </div>
+<div id="k-fold-cross-validation" class="section level3">
+<h3>3. <em>k</em>-fold cross-validation</h3>
+<p>Use 10-fold cross-validation to resample the training data.</p>
+</div>
+<div id="use-purrr-to-add-the-following-columns-to-your-k-fold-cv-object" class="section level3">
+<h3>4. Use <code>{purrr}</code> to add the following columns to your <em>k</em>-fold CV object:</h3>
+<ul>
+<li><em>analysis_n</em> = the <em>n</em> of the analysis set for each fold</li>
+<li><em>assessment_n</em> = the <em>n</em> of the assessment set for each fold</li>
+<li><em>analysis_p</em> = the proportion of the analysis set for each fold</li>
+<li><em>assessment_p</em> = the proportion of the assessment set for each fold</li>
+<li><em>sped_p</em> = the proportion of students receiving special education services (<code>sp_ed_fg</code>) in the analysis and assessment sets for each fold</li>
+</ul>
+</div>
+<div id="please-demonstrate-that-that-there-are-no-common-values-in-the-id-columns-of-the-assessment-data-between-fold01-fold02-and-fold09-fold10-of-your-10-fold-cross-validation-object." class="section level3">
+<h3>5. Please demonstrate that that there are <strong>no</strong> common values in the <code>id</code> columns of the <code>assessment</code> data between <code>Fold01</code> &amp; <code>Fold02</code>, and <code>Fold09</code> &amp; <code>Fold10</code> (of your 10-fold cross-validation object).</h3>
+</div>
+<div id="try-to-answer-these-next-questions-without-running-similar-code-on-real-data." class="section level3">
+<h3>6. Try to answer these next questions without running similar code on real data.</h3>
+<p>For the following code <code>vfold_cv(fictional_train, v = 20)</code>:</p>
+<ul>
+<li>What is the proportion in the analysis set for each fold?</li>
+<li>What is the proportion in the assessment set for each fold?</li>
+</ul>
+</div>
+<div id="use-monte-carlo-cv-to-resample-the-training-data-with-20-resamples-and-.30-of-each-resample-reserved-for-the-assessment-sets." class="section level3">
+<h3>7. Use Monte Carlo CV to resample the training data with 20 resamples and .30 of each resample reserved for the assessment sets.</h3>
+</div>
+<div id="please-demonstrate-that-that-there-are-common-values-in-the-id-columns-of-the-assessment-data-between-resample-8-resample-12-and-resample-2-resample-20in-your-mc-cv-object." class="section level3">
+<h3>8. Please demonstrate that that there <strong>are</strong> common values in the <code>id</code> columns of the <code>assessment</code> data between <code>Resample 8</code> &amp; <code>Resample 12</code>, and <code>Resample 2</code> &amp; <code>Resample 20</code>in your MC CV object.</h3>
+</div>
+<div id="you-plan-on-doing-bootstrap-resampling-with-a-training-set-with-n-500." class="section level3">
+<h3>9. You plan on doing bootstrap resampling with a training set with <em>n</em> = 500.</h3>
+<ul>
+<li>What is the sample size of an analysis set for a given bootstrap resample?</li>
+<li>What is the sample size of an assessment set for a given bootstrap resample?</li>
+<li>If each row was selected only once for an analysis set:
+<ul>
+<li>what would be the size of the analysis set?</li>
+<li>and what would be the size of the assessment set?</li>
+</ul></li>
+</ul>
 </div>
 
 <p>
