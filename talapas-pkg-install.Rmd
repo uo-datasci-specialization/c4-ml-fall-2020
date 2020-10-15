@@ -52,3 +52,5 @@ At this point you just have to wait for everything to be done. You can leave you
 Once the install is complete try running `library(tidyverse)` to make sure it loads. You can try the same with tidymodels if you'd like. 
 
 If you run into any issues please contact me or Joe. I'm more likely to be able to help you if you have a Mac, and Joe is more likely to be able to help you if you have a Windows machine.
+
+Once you feel confident that everything has installed correctly, type `q()` to exit R. This will put you back to where you started with talapas. Then type `exit` and you will be back on your local.
