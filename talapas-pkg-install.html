@@ -9,9 +9,11 @@
 <meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
 
 
+<meta name="author" content="Daniel Anderson" />
 
+<meta name="date" content="2020-10-15" />
 
-<title>EDLD 654: Applied Machine Learning for Educational Data Science</title>
+<title>Installing R Packages on talapas</title>
 
 <script src="site_libs/header-attrs-2.4/header-attrs.js"></script>
 <script src="site_libs/jquery-1.11.3/jquery.min.js"></script>
@@ -320,12 +322,43 @@ $(document).ready(function () {
 
 
 
-<h1 class="title toc-ignore">EDLD 654: Applied Machine Learning for Educational Data Science</h1>
+<h1 class="title toc-ignore">Installing R Packages on talapas</h1>
+<h4 class="author">Daniel Anderson</h4>
+<h4 class="date">10/15/2020</h4>
 
 </div>
 
 
-<p>This is the fourth course in a sequence of courses on educational data science (EDS), taught using the free and open-source statistical programming language <a href="https://cran.r-project.org">R</a>. This course focuses on applied machine learning (ML), with an emphasis on supervised learning methods that have emerged over the last several decades. The primary goal of these methods is to create models capable of making accurate predictions, which generally implies less emphasis on statistical inference.</p>
+<p>When working on the UO talapas computing cluster, you will often need to install new packages. In this course, we will need the tidyverse and tidymodels. If you should happen to need any additional packages as the term goes on, please repeat these steps for the corresponding package</p>
+<div id="maclinux-users" class="section level2">
+<h2>Mac/Linux Users</h2>
+<p>In RStudio look in your console and see if you see a “Terminal” tab. If so, click it, if not, go to Tools -&gt; Terminal -&gt; New Terminal</p>
+<p><img src="slides/img/terminal-rstudio.png" /></p>
+</div>
+<div id="windows-users" class="section level2">
+<h2>Windows users</h2>
+<p>First download <a href="https://mobaxterm.mobatek.net">MobaXterm</a>. You should then be able to use it for everything that follows, using MobaXterm in place of the RStudio terminal. Although the screenshots below use the RStudio terminal, the process should be equivalent.</p>
+</div>
+<div id="install-steps" class="section level1">
+<h1>Install steps</h1>
+<p>In the terminal or MobaXterm, type <code>ssh duckid@talapas-ln1.uoregon.edu</code></p>
+<p>replacing <code>duckid</code> for your actual duckid. For example, I would enter <code>ssh daniela@talapas-ln1.uoregon.edu</code></p>
+<p>You will then be prompted for your password.</p>
+<p><strong>Important!</strong></p>
+<p>When you type in your password (UO password) it will not show any characters you type. Just trust that it is actually registering them.</p>
+<p><img src="slides/img/talapas-login-terminal-rstudio.png" /></p>
+<p>Once you see <code>[duckid@talapas-ln1 ~]$</code> you are connected to talapas. Now load R by just typing <code>R</code>.</p>
+<p><img src="slides/img/talapas-r-command-prompt.png" /></p>
+<p>Now, we’re going to just install packages like normal. The reason we’re doing this before class is because this step will take a while - possibly 15+ minutes. So please be patient.</p>
+<p>Enter the following code: <code>install.packages("tidyverse", "tidymodels")</code> and hit return. It will then prompt you</p>
+<blockquote>
+<p>Warning in install.packages(“tidyverse”, “tidymodels”) : ‘lib = “tidymodels”’ is not writable Would you like to use a personal library instead?</p>
+</blockquote>
+<p>Type <code>yes</code> and press return. It will then provide a second prompt that is similar but asking if you’d like to <em>create</em> a personal library. Type <code>yes</code> again and hit return. Finally, it will ask you to select a CRAN mirror. You can select any of them you want. I usually use <code>1: 0-Cloud</code> which is the RStudio mirror. You just need to type 1 then hit return (if you’re on a Mac) or select it from the menu (if you’re using MobaXterm).</p>
+<p>At this point you just have to wait for everything to be done. You can leave your computer if you’d like while it installs, or work on something else. There’s no need to monitor it.</p>
+<p>Once the install is complete try running <code>library(tidyverse)</code> to make sure it loads. You can try the same with tidymodels if you’d like.</p>
+<p>If you run into any issues please contact me or Joe. I’m more likely to be able to help you if you have a Mac, and Joe is more likely to be able to help you if you have a Windows machine.</p>
+</div>
 
 <p>
 <a rel="license" href="http://creativecommons.org/licenses/by-nc/4.0/">

@@ -12,6 +12,8 @@ navbar:
     href: site-syllabus.html
   - text: Kaggle
     href: https://www.kaggle.com/c/edld-654-fall-2020/overview
+  - icon: fa-server
+    href: talapas-pkg-install.html
   - icon: fa-github
     href: https://github.com/uo-datasci-specialization/c4-ml-fall-2020
 output:
