@@ -17,7 +17,7 @@ In RStudio look in your console and see if you see a "Terminal" tab. If so, clic
 ![](slides/img/terminal-rstudio.png)
 
 ## Windows users
-First download [MobaXterm](https://mobaxterm.mobatek.net) (home edition). You should then be able to use it for everything that follows, using MobaXterm in place of the RStudio terminal. Although the screenshots below use the RStudio terminal, the process should be equivalent.
+First download [MobaXterm](https://mobaxterm.mobatek.net) (home edition -> installer edition). You should then be able to use it for everything that follows, using MobaXterm in place of the RStudio terminal. Although the screenshots below use the RStudio terminal, the process should be equivalent.
 
 
 # Install steps
