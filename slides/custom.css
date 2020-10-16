@@ -1,3 +1,6 @@
+.remark-code-line {
+  color:#69788c;
+}
 .mjx-chtml { font-size: 120% !important; }
 
 .ital {font-style: italic;}
@@ -30,7 +33,7 @@ table {
 }
 
 .gr {
-  color: #2dc41c;
+  color: #4fde99;
 }
 
 .small {
