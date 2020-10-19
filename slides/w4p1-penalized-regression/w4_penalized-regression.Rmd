@@ -1,0 +1,266 @@
+---
+title: "w4"
+author: "Joe Nese"
+date: "10/19/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(rio)
+library(tidyverse)
+library(tidymodels)
+library(tune)
+library(tidypredict)
+
+
+
+theme_set(theme_minimal())
+```
+
+```{r}
+math <- math <- read_csv(here::here("data", "train.csv")) %>% 
+  as_tibble()
+
+#math <- math %>% 
+#  drop_na(lat, econ_dsvntg) 
+
+```
+
+# 1 - Initial Split
+
+```{r}
+set.seed(3000)
+math_split <- initial_split(math) 
+
+math_train <- training(math_split)
+math_test  <- testing(math_split)
+```
+
+# 2 - Resample
+
+```{r}
+set.seed(3000)
+cv_splits <- vfold_cv(math_train)
+```
+
+#  Preprocess
+## Center and scale all predictors
+
+```{r}
+penreg_rec <- 
+  recipe(
+    score ~ enrl_grd + econ_dsvntg + lat + lon, 
+    data = math_train
+  ) %>%
+  step_naomit(everything(), skip = TRUE) %>% 
+  step_string2factor(econ_dsvntg) %>%  
+  step_dummy(econ_dsvntg) %>% 
+  step_normalize(lat, lon, enrl_grd) 
+```
+
+# 3 - Set Model
+## Ridge
+```{r}
+
+mod_ridge <- linear_reg() %>%
+  set_engine("glmnet") %>% 
+  set_mode("regression") %>% # redundant; just getting in the habit
+  set_args(penalty = .1, # we set the penalty = .1 
+           mixture = 0) # specifies a ridge regression model
+```
+
+## lasso
+```{r}
+
+mod_lasso <- linear_reg() %>%
+  set_engine("glmnet") %>% 
+  set_mode("regression") %>% # redundant; just getting in the habit
+  set_args(penalty = .1, # we set the penalty = .1 
+           mixture = 1) # specifies a lasso regression model
+```
+
+## Elastic net
+```{r}
+
+mod_enet <- linear_reg() %>%
+  set_engine("glmnet") %>% 
+  set_mode("regression") %>% # redundant; just getting in the habit
+  set_args(penalty = .1, # we set the penalty = .1
+           mixture = .7) # specifies 70% L1 penalty (lasso) and 30% L2 penalty (ridge)
+```
+
+# 4 - Fit the models
+## Ridge
+```{r}
+
+fit_ridge <- tune::fit_resamples(
+  mod_ridge,
+  preprocessor = penreg_rec,
+  resamples = cv_splits,
+  metrics = yardstick::metric_set(rmse),
+  control = tune::control_resamples(verbose = TRUE,
+                                    save_pred = TRUE)
+)
+
+fit_ridge %>% 
+  collect_metrics()
+
+fit_ridge %>% 
+ tune::collect_metrics(summarize = FALSE)
+
+
+```
+
+## lasso
+```{r}
+fit_lasso <- fit_resamples(
+  mod_lasso,
+  preprocessor = penreg_rec,
+  cv_splits,
+  metrics = yardstick::metric_set(rmse),
+  control = control_grid(verbose = TRUE,
+                         save_pred = TRUE)
+)
+
+fit_lasso %>% 
+  collect_metrics()
+
+```
+
+## Elastic net
+```{r}
+fit_enet <- fit_resamples(
+  mod_enet,
+  preprocessor = penreg_rec,
+  cv_splits,
+  metrics = metric_set(rmse),
+  control = control_grid(verbose = TRUE,
+                         save_pred = TRUE)
+)
+
+fit_enet %>% 
+  collect_metrics()
+
+```
+
+```{r}
+collect_metrics(fit_ridge)
+collect_metrics(fit_lasso)
+collect_metrics(fit_enet)
+
+```
+
+# 5 - Tune
+## Ridge
+```{r}
+ridge_tune_mod <- linear_reg() %>%
+  set_engine("glmnet") %>% 
+  set_args(penalty = tune(), 
+           mixture = 0)
+
+penreg_grid <- grid_regular(penalty(), levels = 10)
+```
+
+```{r}
+
+ridge_tune_mod_results <- tune::tune_grid(
+  ridge_tune_mod,
+  penreg_rec,
+  resamples = cv_splits,
+  grid = penreg_grid,
+  metrics = yardstick::metric_set(rmse),
+  control = tune::control_resamples(verbose = TRUE,
+                                    save_pred = TRUE)
+)
+
+ridge_tune_mod_results %>% 
+  collect_metrics()
+
+ridge_tune_mod_results %>% 
+  collect_metrics(summarize = FALSE)
+
+```
+
+## Elastic net
+
+```{r}
+
+(enet_params <- parameters(penalty(), mixture()))
+(enet_grid <- grid_regular(enet_params, levels = c(10, 5)))
+options(scipen = 999)
+unique(enet_grid$penalty)
+unique(enet_grid$mixture)
+
+enet_grid %>% 
+  ggplot(aes(penalty, mixture, color = factor(penalty))) +
+  geom_point() + 
+  geom_jitter()
+```
+
+```{r}
+
+enet_tune_mod <- linear_reg() %>%
+  set_engine("glmnet") %>% 
+  set_args(penalty = tune(), 
+           mixture = tune())
+
+enet_tune_mod_results <- tune_grid(
+  enet_tune_mod,
+  preprocessor = penreg_rec,
+  resamples = cv_splits,
+  grid = enet_grid,
+#  metrics = yardstick::metric_set(rmse),
+  control = tune::control_resamples(verbose = TRUE,
+                                    save_pred = TRUE)
+)
+
+collect_metrics(enet_tune_mod_results)
+
+enet_tune_mod_results %>%
+  show_best(metric = "rmse", n = 5)
+
+enet_tune_mod_results %>%
+  select_best(metric = "rmse")
+
+```
+
+# 6 - Final fit
+```{r}
+# Select best tuning parameters
+enet_best <- enet_tune_mod_results %>%
+  select_best(metric = "rmse")
+
+# Finalize your model using the best tuning parameters
+enet_mod_final <- enet_tune_mod %>%
+  finalize_model(enet_best) 
+
+# Finalize your recipe using the best turning parameters
+enet_rec_final <- penreg_rec %>% 
+  finalize_recipe(enet_best)
+
+# Run your last fit on your initial data split
+enet_test_results <- last_fit(
+  enet_mod_final, 
+  preprocessor = enet_rec_final, 
+  split = math_split)
+
+#Collect metrics
+enet_test_results %>% 
+  collect_metrics()
+
+
+```
+
+```{r}
+show_best(enet_tune_mod_results, metric = "rmse", n = 1) %>% 
+  bind_rows(show_best(enet_tune_mod_results, metric = "rsq", n = 1)) %>% 
+  select(`.metric`, `.estimator`, mean)
+
+enet_test_results %>% 
+   collect_metrics()
+
+```
+
+
