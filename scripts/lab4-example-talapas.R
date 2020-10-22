@@ -1,7 +1,5 @@
 library(tidyverse)
 library(tidymodels)
-library(future)
-plan(cluster)
 
 full_train <- read_csv("data/train.csv")
 splt <- initial_split(full_train)
