@@ -23,7 +23,7 @@ library(tidymodels)
 Read in the `train.csv` data.
 
 ```{r, data}
-math <- read_csv(here::here("data", "edld-654-spring-2020", "train.csv")) %>% 
+math <- read_csv(here::here("data", "train.csv")) %>% 
   as_tibble()
 
 ```
@@ -135,6 +135,9 @@ For the following code `vfold_cv(fictional_train, v = 20)`:
 set.seed(3000)
 mc_folds <- mc_cv(math_train, prop = .70, times = 20)
 
+mc_folds %>% 
+   mutate(analysis = map(mc_folds$splits, analysis),
+          assessment = map(mc_folds$splits, assessment))
 ```
 
 ### 8. Please demonstrate that that there **are** common values in the `id` columns of the `assessment` data between `Resample 8` & `Resample 12`, and `Resample 2` & `Resample 20`in your MC CV object.
