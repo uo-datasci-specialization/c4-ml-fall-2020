@@ -1,7 +1,6 @@
 ---
 title: "Lab 2"
 subtitle: "Penalized Regression"
-date: "Assigned 4/21/20, Due 4/28/20"
 output:
   html_document: 
     toc: true

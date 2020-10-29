@@ -1,0 +1,270 @@
+---
+title: "Lab 2"
+subtitle: "Penalized Regression"
+author: "Key"
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+    theme: "journal"
+    css: "website-custom.css"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidymodels)
+```
+
+## Read in the `train.csv` data.
+
+```{r, data}
+math <- read_csv(here::here("data", "train.csv"))  
+
+```
+
+
+## 1. Initial Split
+
+Set a seed and split the data into a training set and a testing set as two named objects. 
+
+```{r, initial_split}
+set.seed(3000)
+
+math_split <- initial_split(math) 
+
+math_train <- training(math_split)
+math_test  <- testing(math_split)
+```
+
+## 2. Resample
+
+Set a seed and use 10-fold cross-validation to resample the traning data.
+
+```{r, resample}
+
+set.seed(3000)
+cv_folds <- vfold_cv(math_train)
+```
+
+## 3. Preprocess
+
+Create a recipe object that includes:
+* a formula model with `score` predicted by 4 predictors
+* be sure there are no missing data in your predictors (try `step_naomit()`)
+* center and scale all numeric predictors
+* dummy code all nominal predictors
+
+```{r, preprocess}
+
+#grades <- c("gr3", "gr4", "gr5", "gr6", "gr7", "gr8")
+
+lasso4_rec <- 
+  recipe(
+    score ~ enrl_grd + econ_dsvntg + lat + lon, 
+    data = math_train
+  ) %>%
+  step_naomit(everything(), skip = TRUE) %>% 
+  step_string2factor(econ_dsvntg) %>%  
+#  step_num2factor(enrl_grd, levels = grades) %>% 
+  step_dummy(econ_dsvntg) %>% 
+  step_normalize(lat, lon, enrl_grd)
+
+```
+
+## 4. Parsnip model
+
+Create a lasso `{parsnip}` model where the penalty hyperparameter is set to be tuned.
+
+```{r, lasso}
+
+mod_lasso <- linear_reg() %>%
+  set_engine("glmnet") %>% 
+  set_args(penalty = tune(),
+           mixture = 1)
+
+```
+
+## 5. Fit a tuned lasso model
+
+Complete the code maze below to fit a tuned lasso model.
+
+```{r, lasso_fit_1}
+
+lasso_grid <- grid_regular(penalty())
+
+# lasso_fit_1 <- tune_grid(
+#   ____, 
+#   preprocessor = ____,
+#   resamples = ____,
+#   grid = lasso_grid,
+#   control = tune::control_resamples(verbose = TRUE,
+#                                     save_pred = TRUE)
+# )
+
+lasso4_fit_1 <- tune_grid(
+  mod_lasso, 
+  preprocessor = lasso4_rec,
+  resamples = cv_folds,
+  grid = lasso_grid,
+  control = tune::control_resamples(verbose = TRUE,
+                                    save_pred = TRUE)
+)
+
+```
+
+### Question A
+  + How many models were fit to each fold of `lasso4_fit_1`? (Please provide a numeric answer, *and* use code to corroborate your answer.)
+  
+```{r}
+# 3 models for each fold
+
+lasso4_fit_1 %>% 
+  collect_metrics() %>% 
+  filter(`.metric` == "rmse") %>% 
+  nrow()
+# OR
+unique(lasso4_fit_1$.config)
+
+lasso4_fit_1 %>% 
+  collect_metrics() %>% 
+  select(.config) %>% 
+  distinct()
+
+unique(collect_metrics(lasso4_fit_1)$.config)
+```
+
+  + Use code to list the different values of `penalty()` that were used.
+
+```{r}
+
+lasso4_fit_1 %>% 
+  collect_metrics() %>% 
+  filter(`.metric` == "rmse") %>% 
+  select(penalty)
+```
+
+## 6. Fit another tuned lasso model
+
+Use your code from (5) above to complete the code maze below to fit a second tuned lasso model.
+
+```{r, lasso_fit_2}
+
+# lasso4_fit_2 <- tune_grid(
+#   ____, 
+#   preprocessor = ____,
+#   resamples = ____,
+#   control = tune::control_resamples(verbose = TRUE,
+#                                     save_pred = TRUE)
+# )
+
+lasso4_fit_2 <- tune_grid(
+  mod_lasso,
+  preprocessor = lasso4_rec,
+  resamples = cv_folds,
+  control = tune::control_resamples(verbose = TRUE,
+                                    save_pred = TRUE)
+)
+```
+
+### Question B
+
+  + How many models were fit to each fold of `lasso4_fit_2`? (Please provide a numeric answer, *and* use code to corroborate your answer.)
+
+```{r}
+# 10 models for each fold
+
+lasso4_fit_2 %>% 
+  collect_metrics() %>% 
+  filter(`.metric` == "rmse") %>% 
+  nrow()
+# OR
+lasso4_fit_2$.metrics[[1]] %>% 
+  filter(`.metric` == "rmse")
+```
+
+  + If this is different than the number of models of `lasso4_fit_1`, please explain why.
+
+<!-- **This is different because the default for** `grid_regular(penalty())` **has** `levels = 3`. **See** `?grid_regular()`. For *lasso4_fit_2*, we used the default for `fit_resamples` which sets `grid = 10`. -->
+  
+  + Use code to list the different values of `penalty()` that were used for *lasso_fit_2*.
+
+```{r}
+lasso4_fit_2 %>% 
+  collect_metrics() %>% 
+  filter(`.metric` == "rmse") %>% 
+  select(penalty)
+```
+
+## 7. Complete the necessary steps to create and fit a tuned lasso model that has seven or more predictors (use any tuning grid you like).
+
+```{r, lasso8}
+
+lasso7_rec <- 
+  recipe(
+    score ~ enrl_grd + econ_dsvntg + lat + lon + sp_ed_fg + gndr + dist_sped, 
+    data = math_train
+  ) %>%
+  step_string2factor(econ_dsvntg, sp_ed_fg, gndr, dist_sped) %>% 
+  step_dummy(econ_dsvntg, sp_ed_fg, gndr, dist_sped) %>% 
+  step_normalize(lat, lon) 
+
+lasso7_fit <- tune_grid(
+  mod_lasso,
+  preprocessor = lasso7_rec,
+  resamples = cv_folds,
+  control = tune::control_resamples(verbose = TRUE,
+                                    save_pred = TRUE)
+)
+
+```
+
+## 8. Compare the metrics from the best lasso model with 4 predictors to the best lasso model with 7+ predicors. Which is best?
+
+```{r}
+lasso4_fit_1 %>% 
+  show_best(metric = "rmse", n = 1)
+
+lasso4_fit_2 %>% 
+  show_best(metric = "rmse", n = 1)
+
+lasso7_fit %>% 
+  show_best(metric = "rmse", n = 1)
+
+#Model with 7 predictors
+```
+
+## 9. Fit a tuned elastic net model with the same predictors from (9). 
+  + Create a new `{parsnip}` model
+  + Use the same recipe from (9) above
+  + Create and apply a regular grid for the elastic net model
+  + Compare the metrics from the elastic net model to the best lasso model from (10). Which would you choose for your final model? What are the best hyperparameters for that model?
+
+```{r}
+mod_enet <- linear_reg() %>%
+  set_engine("glmnet") %>% 
+  set_args(penalty = tune(),
+           mixture = tune())
+
+enet_grid <- grid_regular(penalty(), mixture(), levels = c(3, 5))
+
+enet7_fit <- tune_grid(
+  mod_enet,
+  preprocessor = lasso7_rec,
+  resamples = cv_folds,
+  grid = enet_grid,
+  control = tune::control_resamples(verbose = TRUE,
+                                    save_pred = TRUE)
+)
+
+lasso7_fit %>% 
+  show_best(metric = "rmse", n = 1)
+
+enet7_fit %>% 
+  show_best(metric = "rmse", n = 1)
+
+#They're the same for both rmse and rsq, but the they hyperparameters are different. I'd choose with the lasso...
+```
+
+
