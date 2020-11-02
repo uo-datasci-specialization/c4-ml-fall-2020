@@ -1,0 +1,364 @@
+---
+title: "w6_knn"
+author: "Joe Nese"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(here)
+library(tidyverse)
+library(tidymodels)
+library(tune)
+library(tidypredict)
+library(doParallel)
+library(tictoc)
+library(janitor)
+
+theme_set(theme_minimal())
+```
+
+```{r}
+
+set.seed(3000)
+math <- read_csv(here::here("data", "train.csv")) %>% 
+  sample_frac(size = .02) 
+
+```
+
+# 1 - Initial Split
+
+```{r}
+set.seed(210)
+math_split <- initial_split(math) 
+
+set.seed(210)
+math_train <- training(math_split)
+math_test  <- testing(math_split)
+
+```
+
+# 2 - Resample
+
+```{r}
+set.seed(210)
+math_cv <- vfold_cv(math_train)
+```
+
+# 3 - Preprocess
+## Center and scale all predictors
+
+```{r}
+math_train %>% 
+  tabyl(classification)
+
+
+knn1_rec <- 
+  recipe(
+    classification ~ enrl_grd + lat + lon, 
+    data = math_train
+  ) %>%
+  step_mutate(classification = ifelse(classification < 3, "below", "proficient")) %>% 
+  step_mutate(enrl_grd = factor(enrl_grd)) %>% 
+  step_meanimpute(lat, lon) %>%
+  step_unknown(enrl_grd) %>% 
+  step_dummy(enrl_grd) %>%
+  step_normalize(lat, lon) 
+```
+
+# 4 - Set Model
+## KNN
+```{r}
+
+knn1_mod <- nearest_neighbor() %>%
+  set_engine("kknn") %>% 
+  set_mode("classification") 
+
+translate(knn1_mod)
+
+```
+
+# 5 - Tune
+## Let's run the default tuned KNN model for all parameters: `neighbors`, `weight_func`, and `dist_power`
+```{r}
+knn1_mod <- knn1_mod %>% 
+  set_args(neighbors = tune(),
+           weight_func = tune(),
+           dist_power = tune())
+
+translate(knn1_mod)
+
+tic()
+cl <- makeCluster(8)
+
+registerDoParallel(cl)
+
+knn1_res <- tune::tune_grid(
+  knn1_mod,
+  preprocessor = knn1_rec,
+  resamples = math_cv,
+  control = tune::control_resamples(save_pred = TRUE)
+)
+
+stopCluster(cl)
+toc()
+
+# without clustering: 363.86 sec elapsed
+# with clustering: 63.78 sec elapsed
+
+knn1_res %>% 
+  select(.predictions) %>% 
+  unnest()
+
+knn1_res %>% 
+  collect_predictions() 
+
+knn1_res %>% 
+  collect_metrics(summarize = FALSE)
+
+knn1_res %>% 
+  collect_metrics(summarize = FALSE) %>% 
+  distinct(neighbors, weight_func, dist_power)
+
+knn1_res %>% 
+  show_best(metric = "roc_auc", n = 10)
+
+#-- OR
+
+knn1_res$.metrics %>% 
+  bind_rows(.id = "fold") %>% 
+  filter(`.metric` == "roc_auc") %>% 
+  group_by(neighbors, weight_func, dist_power) %>% 
+  summarize(mean = mean(`.estimate`),
+            se = sd(`.estimate`)/sqrt(n())) %>% 
+  arrange(desc(mean))
+
+knn1_res %>% 
+  show_best(metric = "roc_auc", n = 1)
+
+knn1_res %>% 
+  select_best(metric = "roc_auc")
+
+knn1_res %>% 
+  autoplot() +
+  geom_line()
+
+
+knn1_res %>% 
+  autoplot(metric = "roc_auc")
+
+```
+
+
+
+
+# Regular grid
+
+```{r}
+knn_params <- parameters(neighbors(), weight_func())
+knn_reg_grid <- grid_regular(neighbors(), 
+                             weight_func(), 
+                             levels = c(15, 5))
+dim(knn_reg_grid)
+
+str(knn_params)
+
+knn_reg_grid %>% 
+  ggplot(aes(neighbors, weight_func)) +
+  geom_point() +
+  scale_x_continuous(breaks = c(1:15))
+```
+
+## Use the arguments within the hyperparameters
+```{r}
+?neighbors()
+?weight_func()
+values_weight_func
+knn_params <- parameters(neighbors(range = c(1, 15)), 
+                         weight_func(values = values_weight_func[1:5]))
+
+knn_reg_grid <- grid_regular(knn_params, levels = c(15, 5))
+
+knn_reg_grid %>% 
+  ggplot(aes(neighbors, weight_func)) +
+  geom_point()
+```
+
+
+## Let's make a regular grid by hand
+```{r}
+knn_reg_grid_man <- expand.grid(
+  neighbors = c(1:15), 
+  weight_func = values_weight_func[1:5]
+  )
+
+knn_reg_grid_man %>% 
+  tabyl(neighbors, weight_func)
+
+knn_reg_grid_man %>% 
+  ggplot(aes(neighbors, weight_func)) +
+  geom_point() +
+  scale_x_continuous(breaks = c(1:15))
+
+```
+
+
+#Non-regular grid
+```{r}
+knn_params <- parameters(neighbors(), weight_func(), dist_power())
+
+knn_sfd <- grid_max_entropy(knn_params, size = 50)
+
+knn_sfd %>% 
+  ggplot(aes(neighbors, dist_power)) +
+  geom_point(aes(color = weight_func))
+
+
+knn_grid_reg <- grid_regular(knn_params, levels = c(10, 9, 5))
+
+knn_grid_reg %>% 
+  ggplot(aes(neighbors, dist_power)) +
+  geom_point(aes(color = weight_func)) 
+```
+
+## Random
+```{r}
+knn_params <- parameters(neighbors(), weight_func(), dist_power())
+knn_grid_ran <- grid_random(knn_params, size = 50)
+
+knn_grid_ran %>% 
+  ggplot(aes(neighbors, dist_power)) +
+  geom_point(aes(color = weight_func))
+
+```
+
+## Latin hypercube sampling
+```{r}
+
+knn_lhs <- grid_latin_hypercube(knn_params, size = 50)
+
+knn_lhs %>% 
+  ggplot(aes(neighbors, dist_power)) +
+  geom_point(aes(color = weight_func))
+
+```
+
+# Let's apply to a KNN model
+
+## New Recipe
+```{r}
+knn2_rec <- 
+  recipe(
+    classification ~ enrl_grd + lat + lon + econ_dsvntg + sp_ed_fg, 
+    data = math_train) %>%
+  step_mutate(classification = ifelse(classification < 3, "below", "proficient")) %>% 
+#  step_mutate(enrl_grd = factor(enrl_grd)) %>% 
+  step_meanimpute(lat, lon) %>%
+  step_string2factor(econ_dsvntg, sp_ed_fg) %>% 
+  step_unknown(econ_dsvntg, sp_ed_fg) %>%
+  step_dummy(econ_dsvntg, sp_ed_fg) %>%
+  step_normalize(lat, lon)
+
+```
+
+
+## New Model
+
+```{r}
+
+knn2_mod <- nearest_neighbor() %>%
+  set_engine("kknn") %>% 
+  set_mode("classification") %>% 
+  set_args(neighbors = tune(),
+           dist_power = tune())
+```
+
+# Use an SFD grid
+```{r}
+knn_params <- parameters(neighbors(), dist_power())
+knn_sfd <- grid_max_entropy(knn_params, size = 50)
+```
+
+
+# Tune
+```{r}
+tic()
+
+registerDoParallel(makeCluster(8))
+
+knn2_res <- tune::tune_grid(
+  knn2_mod,
+  preprocessor = knn2_rec,
+  resamples = math_cv,
+  grid = knn_sfd,
+  control = tune::control_resamples(save_pred = TRUE)
+)
+
+stopCluster(makeCluster(8))
+toc()
+# with clustering: 462 sec elapsed
+
+knn2_res %>% 
+  collect_metrics()
+
+knn2_res %>% 
+  show_best(metric = "roc_auc", n = 5)
+
+knn2_res %>% 
+  autoplot(metric = "roc_auc") 
+
+```
+
+#Compare models
+```{r}
+knn1_res %>% 
+  show_best(metric = "roc_auc", n = 1)
+
+knn2_res %>% 
+  show_best(metric = "roc_auc", n = 1)
+```
+
+# Final fit
+```{r}
+# Select best tuning parameters
+knn_best <- knn2_res %>%
+  select_best(metric = "roc_auc")
+
+# Finalize your model using the best tuning parameters
+knn_mod_final <- knn2_mod %>%
+  finalize_model(knn_best) 
+
+# Finalize your recipe using the best turning parameters
+knn_rec_final <- knn2_rec %>% 
+  finalize_recipe(knn_best)
+
+# Run your last fit on your initial data split
+cl <- makeCluster(8)
+registerDoParallel(cl)
+knn_final_res <- last_fit(
+  knn_mod_final, 
+  preprocessor = knn_rec_final, 
+  split = math_split)
+stopCluster(cl)
+
+#Collect metrics
+knn_final_res %>% 
+  collect_metrics()
+
+
+```
+
+```{r}
+
+knn_final_res %>% 
+  collect_predictions() 
+
+knn_final_res %>% 
+  collect_predictions() %>%   
+  conf_mat(truth = classification, estimate = .pred_class)
+```
+
+
+
+
