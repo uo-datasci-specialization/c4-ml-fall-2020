@@ -1,0 +1,94 @@
+---
+title: "Lab 4"
+subtitle: "k-nearest neighbor"
+date: "Assigned 11/4/20, Due 11/11/20"
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+    theme: "journal"
+    css: "website-custom.css"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+
+```
+
+The goal of this lab is to apply and tune *K*-nearest neighbor models and explore non-regular grids while using HPC via [talapas](https://hpcrcf.atlassian.net/wiki/spaces/TCP/overview?homepageId=6761503).
+
+Please complete this project using a GitHub repo. You will complete this lab by submitting a link to your repo. In your repo, please have `data`, `models`, and `plots` folders, as well as a `screenshots` folder. I will be asking you to take screenshots of your work at multiple points.
+
+When you run the models on talapas, you can decide how much of the data to use. You are free to even stick with half of 1%. The idea is to get you practice working with talapas, but $K$NN models are just really inefficient and I'd like you to be able to work mostly interactively. As I (Daniel) worked through the lab with the full dataset, I found that the preliminary run took about 10-12 minutes, the tuning took a very long time, and the final fit was very fast. Note that if you sample, say, 50% of the data, the time it takes will not directly translate to 50% of the time for the full data, but it will obviously help. 
+
+### 1. Data
+* Connect to talapas. Note, for this lab you will also need the "kknn" and "doParallel" packages. Install them after you connect. (Type `R` and hit return to connect to R, install like normal, saving to a local library, then type `q()` to exit R).
+* Navigate to your folder in `edld654`
+* Create new `data` and `models` folders
+* Move `train.csv` into the `data` folder 
+* Take a screenshot of your data successfully transferred to talapas and place it in your screenshots folder. Note - if you're working in a group, each member of the group should do this, and each member of the group should run analyses on talapas. You can have separate folders for each group member, or just name the screenshots with the group members name.
+
+If you have trouble with this step, you will not be able to complete subsequent steps in the lab, so please ask for help.
+
+### 2. A simple KNN model
+On your local (not on talapas), create a new R script. Do the following
+
+* Load the *tidyverse*, and *tidymodels*
+* Add the following to prepare for parallel processing
+
+```{r eval = FALSE}
+all_cores <- parallel::detectCores(logical = FALSE)
+
+library(doParallel)
+cl <- makePSOCKcluster(all_cores)
+registerDoParallel(cl)
+foreach::getDoParWorkers()
+clusterEvalQ(cl, {library(tidymodels)})
+```
+
+* Read in `train.csv` from the `data` folder using a relative path (not `here::here`).
+* Use `dplyr::sample_frac` or `dplyr::slice_sample` (basically equivalent) to randomly select a proportion of 0.005 of all rows (i.e., half of one percent). This is so you can work with the models more easily locally, then you'll comment this part out when you go to talapas.
+* Create your initial split object, pull the training data from it, and use the training data to create a $k$-fold cross-validation data object.
+* Create a basic recipe that you will work with for the lab. Use **classification** as the outcome (not *score*) and **do not model all variables**. It will be too computationally intensive. Just select of few variables (more than 3, less than 10).
+  + **Hint**: When developing your recipe, make sure you exclude your outcome with things like `step_novel()`, `step_dummy()`, or any other operation you apply to `all_nominal()`, unless of course you want that operation to be conducted on your outcome too.
+* **optional** everything up to this point will be needed for all model fits. You can save this as a stand-alone R file and `source` it in your other scripts, or you can just copy and past it into each model fit script. We'll be writing separate scripts for each model fit.
+* Create a KNN model object, setting the appropriate mode and engine - pick a random $k$ for now.
+* Use `fit_resamples` to fit the model. Save these resamples to an object.
+* Save the fit resamples object as a `.Rds` file in the models folder using a relative path.
+* Use session -> restart R, and run the script locally to ensure everything works.
+
+
+### 3. Preliminary run on talapas
+* Create a `.srun` script
+  + Ask for something like 1 node with 8 CPUs per task with 16 gigs of memory per CPU. You can ask for more, but you might get waitlisted a bit. You can also try different combinations to see what works fastest for you, but the above specs are pretty decent.
+* Move all the files over to talapas in your folder
+  + Data file should be there already
+  + Comment out the sampling of rows (or change the proportion) and move the script over
+  + Move the `.srun` file over
+* Run the the job through your terminal connection with `sbatch my-batch-script.srun`, replacing `my-batch-script` with the name of your `.srun` file.
+* Check the status of your job with `squeue -u duckid`, replacing `duckid` with your duckid. Take a screenshot of the status and place it in the screenshots folder.
+* Move the saved file back to your local.
+* Report on the AUC for this model. You can report these either through an Rmd file or by just writing out a csv.
+
+### 4. Model tuning
+Create a new R script to conduct modeling tuning. You will need all the same pieces up to the **optional** part above (i.e., everything up to where you define the model). Create a non-regular, space-filling design grid using `grid_max_entropy` and 25 parameter values.
+
+* Tune the range of `neighbors` hyperparameter for `c(1, 20)` along with the `dist_power` hyperparameter.
+* On your local, produce a `ggplot` plot to show a graphical representation of your non-regular grid. Save this in your "plots" folder. Note - you only need one of these for your group, not for each member. Comment this code out when you're done so it doesn't run when you fit the model with talapas.
+* Fit your tuned $K$NN model (using only the small proportion of rows again) to your `resamples`, using your specified `recipe` and non-regular `grid`.
+* Once you are certain the script is working as you expect, save it and move it to talapas. Modify or create a new `.srun` script. Run the tuning script with the full data or the sample of rows you have chosen, saving the model tuning object into the models folder. Make sure to save it with a different name than your previous model. Take a screenshot of your models folder on talapas showing the two fitted models and place it in your screenshots folder.
+* Move the tuned model object back to your local and use it to report the top 5 tuned parameter models with the best AUC estimates. You can again report these either through an Rmd file (using the same one as before) or by just writing out a csv.
+
+### 5. Final fit
+Conduct your final fit. Do this first on your local using the small proportion of rows, then replicate it on talapas. Again, please make sure to save the final fit as a new model object and take a screenshot showing your models folder after it has saved (the folder should have three model objects). Use:
+
+* `select_best` to select your best tuned model.
+* `finalize_model` to finalize your model using your best tuned model.
+* `finalize_recipe` to finalize your recipe using your best tuned model (in this case, we didn't tune anything in our recipe, but it's a good habit to get into).
+* `last_fit` to run your last fit with your `finalized_model` and `finalized_recipe`on your initial data split. When working on talapas, this is the model object you should save and transfer to your local.
+* `collect_metrics` from your final results. Similar to your model tuning, you will report these on the model run on talapas. You can report these in the same Rmd as the preliminary fit and tuning, or in a third CSV that you write to your local.
+
+### 6. Submit
+Please submit your lab on canvas by pasting a link to your GitHub repo.
