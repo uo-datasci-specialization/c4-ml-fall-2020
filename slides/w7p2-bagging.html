@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>Bagging</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Daniel Anderson" />
+    <link href="libs/remark-css-0.0.1/default.css" rel="stylesheet" />
+    <link href="libs/remark-css-0.0.1/uo.css" rel="stylesheet" />
+    <link href="libs/remark-css-0.0.1/uo-fonts.css" rel="stylesheet" />
+    <link href="libs/remark-css-0.0.1/hygge.css" rel="stylesheet" />
+    <link rel="stylesheet" href="custom.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# Bagging
+### Daniel Anderson
+### Week 7, Class 2
+
+---
+
+
+
+
+# Agenda
+* Ensemble models with bagging to increase model performance generally
+
+* Illustrate bagging with trees
+
+---
+# Ensemble models
+* Build an .ital[ensemble] of models, rather than just one
+
+* Collect predictions from all models
+
+* Collapse information across models for each prediction to obtain an overall prediction
+
+
+--
+### Benefits
+* Often lead to more stable and accurate algorithms
+
+* Can help reduce model variance (minimize overfitting)
+
+---
+class: inverse center middle
+# Bagging
+.b[B]ootstrap .b[Agg]regation
+
+---
+# Bagging
+* Create `\(b\)` bootstrap resamples of the training data
+
+* Apply the given model (often referred to as the .b[base learner]) to each resample
+
+* Regression: Average predictions across resamples 
+
+* Classification: Take the mode of classification predictions .b[or] average classification probabilities, and then make classification decision
+
+---
+# Bagging
+* Reduces the .b[variance] of an individual model by averaging across many models
+
+* This works well when the .b[base learner] has high variance
+
+  + Decision trees
+  + KNN with small `\(k\)`
+
+
+--
+* Bagging .ital[does not] work well for algorithms that already have low variance
+
+  + For example, for a very small sample, bagging may help a linear model, but as the sample size grows, the predictions will be nearly identical while increasing computational complexity
+
+
+--
+* "Wisdom of the crowds" effect
+  + Guessing the number of jellybeans in a jar
+
+---
+background-image:url(https://bradleyboehmke.github.io/HOML/08-bagging_files/figure-html/bagging-multiple-models-1.png)
+background-size: contain
+# Example across models
+
+---
+# How many bags?
+Or, put differently, how many bootstrap resamples?
+
+* Typically anywhere from 50-500 will work well
+
+* Datasets with strong predictors will require fewer bags
+
+* Highly noisy data/variable models will likely need more bags
+
+
+--
+### Too many trees
+* Not a problem in terms of estimation - only in computational efficiency
+
+---
+# Bias-variance tradeoff
+
+* As we saw, a single decision tree has a high likelihood of overfitting to the observed data
+
+* Hyperparameters help with this by:
+  - Limiting the depth of the tree (e.g., `\(n\)` within each terminal node)
+  - Pruning (using the cost complexity parameter)
+  
+* Instead, we can .ital[captialize] on the model variance for understanding the overall trends, but then reducing that variance to a stable model through averaging
+
+* Doesn't mean we don't need to tune the model, just that we probably want to start with a pretty complex model
+
+---
+background-image:url(https://i.pinimg.com/736x/ae/c9/c7/aec9c7e029e212d47e7c02e1a009252c---hours-anne.jpg)
+background-size: contain
+class: inverse center middle
+### Implementation with tidymodels
+&lt;br/&gt;
+.Large[[{baguette}](https://github.com/tidymodels/baguette)]
+
+
+```r
+install.packages("baguette")
+```
+
+---
+# Load data
+Let's work with the same data we used w/decision trees
+
+
+```r
+library(tidyverse)
+full_train &lt;- read_csv(
+  here::here("data", "ds-bowl-2019.csv"),
+  col_types = cols(.default = col_guess(),
+                   accuracy_group = readr::col_factor(
+                     levels = as.character(0:3),
+                     ordered = TRUE)
+                   )
+)
+```
+
+---
+# Create splits
+
+
+```r
+library(tidymodels)
+set.seed(4520)
+splt &lt;- initial_split(full_train)
+train &lt;- training(splt)
+cv &lt;- vfold_cv(train)
+train
+```
+
+```
+## # A tibble: 37,500 x 6
+##    event_count event_code game_time title                         world    
+##          &lt;dbl&gt;      &lt;dbl&gt;     &lt;dbl&gt; &lt;chr&gt;                         &lt;chr&gt;    
+##  1           1       2000         0 Welcome to Lost Lagoon!       NONE     
+##  2           1       2000         0 Sandcastle Builder (Activity) MAGMAPEAK
+##  3           2       3010        53 Sandcastle Builder (Activity) MAGMAPEAK
+##  4           3       3110      6972 Sandcastle Builder (Activity) MAGMAPEAK
+##  5           4       4070      9991 Sandcastle Builder (Activity) MAGMAPEAK
+##  6           6       4070     11255 Sandcastle Builder (Activity) MAGMAPEAK
+##  7           7       4070     11689 Sandcastle Builder (Activity) MAGMAPEAK
+##  8           9       4070     12672 Sandcastle Builder (Activity) MAGMAPEAK
+##  9          10       4070     13389 Sandcastle Builder (Activity) MAGMAPEAK
+## 10          11       4070     13639 Sandcastle Builder (Activity) MAGMAPEAK
+## # … with 37,490 more rows, and 1 more variable: accuracy_group &lt;ord&gt;
+```
+
+---
+# Create a simple recipe
+* Model formula
+* Specify the outcome as a factor
+
+
+```r
+rec &lt;- recipe(accuracy_group ~ ., data = train) %&gt;% 
+  step_mutate(accuracy_group = factor(accuracy_group))
+```
+
+---
+# Specify a model
+* This time, instead of specifying `decision_tree()` to specify our model, we use `baguette::bag_tree()`. 
+
+* Specify the number of bags via the `times` argument when you `set_engine`
+
+--
+
+
+```r
+library(baguette)
+mod &lt;- bag_tree() %&gt;% 
+  set_mode("classification") %&gt;% 
+  set_args(cost_complexity = 0, min_n = 2) %&gt;% 
+* set_engine("rpart", times = 50) # 50 bootstrap resamples
+```
+
+---
+# Estimate!
+I've included timings here too (we'll see why I'm not using **{tictoc}** later)
+
+```r
+m1_start &lt;- Sys.time()
+m1 &lt;- fit_resamples(mod, rec, cv)
+m1_end &lt;- Sys.time()
+m1_end - m1_start
+```
+
+```
+## Time difference of 2.64267 mins
+```
+
+```r
+show_best(m1, "roc_auc") # our best w/single model was 0.7806637
+```
+
+```
+## # A tibble: 1 x 5
+##   .metric .estimator      mean     n     std_err
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt; &lt;int&gt;       &lt;dbl&gt;
+## 1 roc_auc hand_till  0.8475056    10 0.007445926
+```
+
+```r
+show_best(m1, "accuracy") # our best w/single model was 0.671
+```
+
+```
+## # A tibble: 1 x 5
+##   .metric  .estimator      mean     n    std_err
+##   &lt;chr&gt;    &lt;chr&gt;          &lt;dbl&gt; &lt;int&gt;      &lt;dbl&gt;
+## 1 accuracy multiclass 0.6590550    10 0.01258306
+```
+
+---
+# How many bags do we really need?
+
+* Write a function to pull the `roc_auc` from a model with `\(b\)` bagged trees
+
+
+```r
+small_cv &lt;- vfold_cv(train, v = 2)
+
+pull_auc &lt;- function(b) {
+  # specify model
+  mod &lt;- bag_tree() %&gt;% 
+    set_mode("classification") %&gt;% 
+    set_args(cost_complexity = 0, min_n = 2) %&gt;% 
+    set_engine("rpart", times = b)
+  
+  # fit model to full training dataset
+  m &lt;- fit_resamples(mod, rec, small_cv)
+  
+  show_best(m, "roc_auc")
+}
+```
+
+---
+# test function
+
+```r
+pull_auc(1)
+```
+
+```
+## # A tibble: 1 x 5
+##   .metric .estimator      mean     n       std_err
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt; &lt;int&gt;         &lt;dbl&gt;
+## 1 roc_auc hand_till  0.6870806     2 0.00007667311
+```
+
+```r
+pull_auc(2)
+```
+
+```
+## # A tibble: 1 x 5
+##   .metric .estimator      mean     n      std_err
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt; &lt;int&gt;        &lt;dbl&gt;
+## 1 roc_auc hand_till  0.7432533     2 0.0003472258
+```
+
+```r
+pull_auc(3)
+```
+
+```
+## # A tibble: 1 x 5
+##   .metric .estimator      mean     n     std_err
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt; &lt;int&gt;       &lt;dbl&gt;
+## 1 roc_auc hand_till  0.7667645     2 0.002367114
+```
+
+---
+# Evaluate b
+
+
+```r
+library(future)
+plan(multisession)
+
+library(tictoc)
+tic()
+bags &lt;- map_df(seq(1, 200, 15), pull_auc) 
+toc()
+```
+
+```
+## 559.789 sec elapsed
+```
+
+```r
+plan(sequential)
+```
+
+---
+# Learning curve
+
+
+```r
+bags %&gt;% 
+  mutate(b = seq(5, 200, 15)) %&gt;% 
+  ggplot(aes(b, mean)) +
+  geom_line() +
+  geom_point() 
+```
+
+![](w7p2-bagging_files/figure-html/auc-curve-1.png)&lt;!-- --&gt;
+
+---
+# We can still tune
+
+```r
+mod_tune &lt;- bag_tree() %&gt;% 
+  set_mode("classification") %&gt;% 
+  set_args(cost_complexity = tune(), min_n = tune()) %&gt;% 
+  set_engine("rpart", times = 50) 
+
+tree_grid &lt;- grid_max_entropy(cost_complexity(), min_n(), size = 20)
+
+plan(multisession)
+tic()
+bag_tune &lt;- tune_grid(mod_tune, rec, cv, grid = tree_grid)
+toc()
+```
+
+```
+## 2106.308 sec elapsed
+```
+
+```r
+plan(sequential)
+```
+
+---
+# Best hyper parameters
+
+```r
+select_best(bag_tune, "roc_auc")
+```
+
+```
+## # A tibble: 1 x 3
+##   cost_complexity min_n .config
+##             &lt;dbl&gt; &lt;int&gt; &lt;chr&gt;  
+## 1 0.0000001111758    13 Model01
+```
+
+--
+### Finalize the model
+
+
+```r
+final_mod &lt;- mod_tune %&gt;% 
+  finalize_model(select_best(bag_tune, "roc_auc"))
+```
+
+---
+
+```r
+final_mod
+```
+
+```
+## Bagged Decision Tree Model Specification (classification)
+## 
+## Main Arguments:
+##   cost_complexity = 1.11175763948328e-07
+##   min_n = 13
+## 
+## Engine-Specific Arguments:
+##   times = 50
+## 
+## Computational engine: rpart
+```
+
+---
+# Test fit
+
+
+```r
+final_fit &lt;- last_fit(final_mod, rec, splt)
+collect_metrics(final_fit)
+```
+
+```
+## # A tibble: 2 x 3
+##   .metric  .estimator .estimate
+##   &lt;chr&gt;    &lt;chr&gt;          &lt;dbl&gt;
+## 1 accuracy multiclass 0.6542793
+## 2 roc_auc  hand_till  0.8544326
+```
+
+* Recall that our best AUC with a single decision tree was 0.78. So we've made significant gains
+
+* Somewhat surprisingly (to me anyway), our overall accuracy is actually worse
+
+  + Generally (in my experience) you'd make a more informed decision based on balancing sensitivity/specificy
+
+---
+# Model assessment
+As shown, you can still use `\(k\)`-fold CV, .b[but]... You have already created bootstrap resamples in your model fitting process!
+
+
+--
+Out-of-bag (OOB) samples are "free" (computationally)
+
+
+--
+If your sample size is sufficiently large (e.g., `\(n\)` &gt; ~1K), using OOB samples to estimate model performance will result in similar estimates to `\(k\)`-fold CV
+
+
+---
+# How do we estimate OOB performance?
+* Good question - I don't think you can at present, at least not with **{baguette}**
+
+I [filed an issue](https://github.com/tidymodels/baguette/issues/33) requesting this as a feature. 
+
+I don't have any idea if this will be implemented. Note that basically a version of this was implemented previously, but it's since been removed because of incompatibility with one engine (**C5.0**).
+
+
+--
+Let's look at a different approach, using the *random forest* algortithm, but constraining it to fit a bagged tree model.
+
+
+---
+class: inverse center middle
+# Using random forests for bagging
+
+---
+# Overview
+* Random forests include both bagging and a stochastic components to randomly select columns as each tree is built
+
+* The random selection of columns helps decorrelate the trees and is a hyperparameter in the model
+
+* If we set the number of columns to randomly select equal to the number of predictors, the model simplifies to a bagged tree model
+
+* Joe will talk more about this next week. 
+
+* Fitting the model with the [**{ranger}**]() engine allows us to access OOB predicted probabilities, which we can use to calculate our metrics
+
+
+---
+# Basic modeling setup
+
+
+```r
+bt_ranger_mod &lt;- rand_forest() %&gt;% 
+  set_engine("ranger") %&gt;% 
+  set_mode("classification") %&gt;% 
+* set_args(mtry = 5, # Specify number of predictors
+*          trees = 50, # Number of bags
+*          min_n = 2, # We can only control tree depth; no pruning
+*          probability = FALSE) # Build a standard classificaiton tree
+```
+
+### Note
+We can be certain of our number of predictors by checking our recipe. 
+
+
+```r
+sum(rec$var_info$role == "predictor")
+```
+
+```
+## [1] 5
+```
+
+---
+# A note on specification
+
+Likely the most obtuse part of the previous was `probability = FALSE`
+
+* The default is `TRUE`, in which case *probability* trees are built, rather than standard classification trees.
+* The **functional** difference here is that the predictions from the model when `probability = TRUE` are class probabilities (for each class). When `probability = FALSE` we get the actual class predictions.
+* We need actual class predictions to calculate accuracy in a comparable way to **{rpart}**.
+
+---
+# Fit the model
+Note, I'm trying to *only fit the model once* (which still leads to 100 trees being grown). So I don't want to use something like `fit_resamples()`. Instead, I'll just use `fit()`.
+
+
+--
+
+Recall that `fit()` does *not* take a recipe object. For example, I would expec the below to work, but it does not.
+
+
+```r
+fit(bt_ranger_mod, rec)
+```
+
+```
+## Error in fit.model_spec(bt_ranger_mod, rec): argument "data" is missing, with no default
+```
+
+---
+Instead, we have to prep/bake our data first
+
+
+```r
+prepped_d &lt;- rec %&gt;% 
+  prep() %&gt;% 
+  bake(new_data = NULL) # could also say `bake(train)`
+```
+
+And now we can fit the model using `fit(model, formula, data)`
+
+
+```r
+tic()
+bt_ranger_fit &lt;- fit(bt_ranger_mod, 
+                     accuracy_group ~ .,
+                     prepped_d)
+toc()
+```
+
+```
+## 0.513 sec elapsed
+```
+
+
+---
+Print the results
+
+
+```r
+bt_ranger_fit
+```
+
+```
+## parsnip model object
+## 
+## Fit time:  193ms 
+## Ranger result
+## 
+## Call:
+##  ranger::ranger(x = maybe_data_frame(x), y = y, mtry = min_cols(~5,      x), num.trees = ~50, min.node.size = min_rows(~2, x), probability = ~FALSE,      num.threads = 1, verbose = FALSE, seed = sample.int(10^5,          1)) 
+## 
+## Type:                             Classification 
+## Number of trees:                  50 
+## Sample size:                      2801 
+## Number of independent variables:  5 
+## Mtry:                             5 
+## Target node size:                 2 
+## Variable importance mode:         none 
+## Splitrule:                        gini 
+## OOB prediction error:             33.99 %
+```
+
+---
+# Comparing results
+
+Our estimated accuracy is `\(1 - \text{prediction error}\)` or 0.6601214
+
+What did we get when using `\(k\)`-fold CV?
+
+
+```r
+show_best(m1, metric = "accuracy")
+```
+
+```
+## # A tibble: 1 x 5
+##   .metric  .estimator      mean     n    std_err
+##   &lt;chr&gt;    &lt;chr&gt;          &lt;dbl&gt; &lt;int&gt;      &lt;dbl&gt;
+## 1 accuracy multiclass 0.6590550    10 0.01258306
+```
+
+The results are *highly* similar, but the approach using OOB samples took only a fraction of the time. Specifically 2.643 minutes for `fit_resamples()`, versus just  seconds for the OOB estimate.
+
+---
+# Other metrics
+The primary other metric we've been looking at is `roc_auc`. We can estimate this with `yardstick::roc_auc()`, but for that we *need* the class probabilities. Let's re-estimate.
+
+
+```r
+bt_ranger_mod2 &lt;- bt_ranger_mod %&gt;% 
+  set_args(probability = TRUE)
+bt_ranger_fit2 &lt;- fit(bt_ranger_mod2, 
+                     accuracy_group ~ .,
+                     prepped_d)
+```
+
+---
+# Extract predictions
+We now need to compare the OOB class probabilities with the observed classes.
+
+First, extract the OOB probabilities. Note that in the below I'm transforming the matrix into a tibble.
+
+
+```r
+probs &lt;- as_tibble(bt_ranger_fit2$fit$predictions)
+probs
+```
+
+```
+## # A tibble: 2,801 x 4
+##           `0`   `1`        `2`       `3`
+##         &lt;dbl&gt; &lt;dbl&gt;      &lt;dbl&gt;     &lt;dbl&gt;
+##  1 0.2652617      0 0.2813317  0.4534066
+##  2 0.3952071      0 0.2324664  0.3723265
+##  3 0.04545455     0 0.06818182 0.8863636
+##  4 0.1            0 0.075      0.825    
+##  5 0.1041667      0 0.3541667  0.5416667
+##  6 0.2894737      0 0.5        0.2105263
+##  7 0.3260870      0 0.2173913  0.4565217
+##  8 0.2352941      0 0.3529412  0.4117647
+##  9 0.4            0 0.35       0.25     
+## 10 0.02631579     0 0.2368421  0.7368421
+## # … with 2,791 more rows
+```
+
+---
+Next add the observed class to this tibble. **Note:** **{ranger}** only fits to cases with observations on the outcome. So we have to eliminate missing data when we add it in. 
+
+
+```r
+probs &lt;- probs %&gt;% 
+  mutate(observed = na.omit(prepped_d$accuracy_group))
+probs
+```
+
+```
+## # A tibble: 2,801 x 5
+##           `0`   `1`        `2`       `3` observed
+##         &lt;dbl&gt; &lt;dbl&gt;      &lt;dbl&gt;     &lt;dbl&gt; &lt;ord&gt;   
+##  1 0.2652617      0 0.2813317  0.4534066 3       
+##  2 0.3952071      0 0.2324664  0.3723265 3       
+##  3 0.04545455     0 0.06818182 0.8863636 3       
+##  4 0.1            0 0.075      0.825     3       
+##  5 0.1041667      0 0.3541667  0.5416667 3       
+##  6 0.2894737      0 0.5        0.2105263 3       
+##  7 0.3260870      0 0.2173913  0.4565217 3       
+##  8 0.2352941      0 0.3529412  0.4117647 3       
+##  9 0.4            0 0.35       0.25      3       
+## 10 0.02631579     0 0.2368421  0.7368421 3       
+## # … with 2,791 more rows
+```
+
+---
+# Calculate AUC
+Finally, we can calculate AUC using `yardstick::roc_auc()`
+
+
+```r
+roc_auc(probs, truth = observed, `0`:`3`)
+```
+
+```
+## # A tibble: 1 x 3
+##   .metric .estimator .estimate
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
+## 1 roc_auc hand_till  0.8439679
+```
+
+---
+# Another example
+### Regression
+
+
+```r
+set.seed(4520)
+d &lt;- read_csv(here::here("data",
+                         "train.csv")) %&gt;% 
+  select(-classification) %&gt;% 
+  sample_frac(0.01)
+
+splt_reg &lt;- initial_split(d)
+train_reg &lt;- training(splt_reg)
+cv_reg &lt;- vfold_cv(train_reg)
+```
+
+---
+# Create recipe
+
+
+```r
+rec_reg &lt;- recipe(score ~ ., data = train_reg)  %&gt;% 
+  step_mutate(tst_dt = lubridate::mdy_hms(tst_dt),
+              time_index = as.numeric(tst_dt)) %&gt;%
+  update_role(tst_dt, new_role = "time_index")  %&gt;% 
+  update_role(contains("id"), ncessch, new_role = "id vars")  %&gt;% 
+  step_novel(all_nominal())  %&gt;% 
+  step_unknown(all_nominal())  %&gt;% 
+  step_rollimpute(all_numeric(), -all_outcomes(), -has_role("id vars"))  %&gt;% 
+  step_medianimpute(all_numeric(), -all_outcomes(), -has_role("id vars"))  %&gt;% # neccessary when date is NA
+  step_zv(all_predictors(), freq_cut = 0, unique_cut = 0) 
+```
+
+---
+# Single tree
+Let's first tune an individual tree. In other words, using this recipe, how predictive of a model can we build, using a decision tree?
+
+
+```r
+tune_single_tree &lt;- decision_tree() %&gt;% 
+  set_mode("regression") %&gt;% 
+  set_engine("rpart") %&gt;% 
+  set_args(cost_complexity = tune(),
+           min_n = tune())
+
+params &lt;- parameters(cost_complexity(), min_n())
+grd &lt;- grid_max_entropy(params, size = 50)
+```
+
+---
+# Conduct grid search
+
+
+```r
+cl &lt;- parallel::makeCluster(parallel::detectCores())
+
+doParallel::registerDoParallel(cl)
+single_tree_grid &lt;- tune_grid(
+  tune_single_tree,
+  rec_reg,
+  cv_reg,
+  grid = grd
+)
+parallel::stopCluster(cl)
+foreach::registerDoSEQ() # I was getting errors without this
+
+show_best(single_tree_grid, "rmse")
+```
+
+```
+## # A tibble: 5 x 8
+##   cost_complexity min_n .metric .estimator     mean     n  std_err .config
+##             &lt;dbl&gt; &lt;int&gt; &lt;chr&gt;   &lt;chr&gt;         &lt;dbl&gt; &lt;int&gt;    &lt;dbl&gt; &lt;chr&gt;  
+## 1     0.009749519    24 rmse    standard   93.68901    10 1.612609 Model11
+## 2     0.007159813    13 rmse    standard   94.03988    10 1.643602 Model21
+## 3     0.004081931    29 rmse    standard   94.07221    10 1.856275 Model38
+## 4     0.006700523     8 rmse    standard   94.74148    10 1.936997 Model05
+## 5     0.002279691    36 rmse    standard   97.63317    10 2.202756 Model49
+```
+
+---
+# Finalize model &amp; evaluate
+
+
+```r
+single_tree &lt;- tune_single_tree %&gt;% 
+  finalize_model(select_best(single_tree_grid, "rmse"))
+
+single_tree_fit &lt;- last_fit(single_tree, rec_reg, splt_reg)
+single_tree_fit$.metrics
+```
+
+```
+## [[1]]
+## # A tibble: 2 x 3
+##   .metric .estimator  .estimate
+##   &lt;chr&gt;   &lt;chr&gt;           &lt;dbl&gt;
+## 1 rmse    standard   98.48977  
+## 2 rsq     standard    0.3315547
+```
+
+---
+# Bagging
+
+### Evaluate how many bags
+This time, let's do it with the OOB performance metric, via **{ranger}**
+
+
+```r
+# prep/bake data
+prepped_reg &lt;- rec_reg %&gt;% 
+  prep() %&gt;% 
+  bake(new_data = NULL) %&gt;% 
+  select(-contains("id"), -ncessch, -tst_dt)
+
+# number of predictors
+ncol(prepped_reg) - 1
+```
+
+```
+## [1] 28
+```
+
+---
+# Write a function
+
+
+```r
+pull_rmse &lt;- function(b) {
+  # specify model
+  mod &lt;- rand_forest() %&gt;% 
+    set_mode("regression") %&gt;% 
+    set_engine("ranger") %&gt;% 
+    set_args(mtry = 28,
+             min_n = 2,
+             trees = b)
+  
+  # fit model to full training dataset
+  m &lt;- fit(mod, score ~ ., prepped_reg)
+  
+  # Extract RMSE, store as a tibble
+  tibble(rmse = sqrt(m$fit$prediction.error))
+}
+```
+
+---
+# Estimate
+Note I'm not using parallel processing here and it's still relatively fast.
+
+
+```r
+tic()
+bags_reg &lt;- map_df(seq(1, 500, 25), pull_rmse) 
+toc()
+```
+
+```
+## 31.413 sec elapsed
+```
+
+---
+# plot
+
+```r
+bags_reg %&gt;% 
+  mutate(b = seq(1, 500, 25)) %&gt;% 
+  ggplot(aes(b, rmse)) +
+  geom_line() +
+  geom_point() +
+  geom_vline(xintercept = 155, color = "magenta", lwd = 1.3)
+```
+
+![](w7p2-bagging_files/figure-html/plot-rmse-curve-1.png)&lt;!-- --&gt;
+
+---
+# Tune `min_n`
+
+Tuning with OOB metrics requires a bit more "manual" coding. This is basically the same as when evaluating the number of bags needed.
+
+Note that I've used 200 bags just to be overly cautious. 
+
+
+```r
+tune_min_n &lt;- function(n) {
+  mod &lt;- rand_forest() %&gt;% 
+    set_mode("regression") %&gt;% 
+    set_engine("ranger") %&gt;% 
+    set_args(mtry = 28,
+             min_n = n,
+             trees = 200)
+  
+  # fit model to full training dataset
+  m &lt;- fit(mod, score ~ ., prepped_reg)
+  
+  # Extract RMSE, store as a tibble
+  tibble(rmse = sqrt(m$fit$prediction.error))
+}
+```
+
+---
+
+```r
+tic()
+optimal_n &lt;- map_df(seq(2, 170, 2), tune_min_n) 
+toc()
+```
+
+```
+## 51.812 sec elapsed
+```
+
+---
+# Check learning curve
+
+
+```r
+optimal_n %&gt;% 
+  mutate(n = seq(2, 170, 2)) %&gt;% 
+  ggplot(aes(n, rmse)) +
+  geom_line() +
+  geom_point() 
+```
+
+![](w7p2-bagging_files/figure-html/unnamed-chunk-15-1.png)&lt;!-- --&gt;
+
+```r
+optimal_n %&gt;% 
+  mutate(n = seq(2, 170, 2)) %&gt;% 
+  filter(n &gt; 48 &amp; n &lt; 62)
+```
+
+```
+## # A tibble: 6 x 2
+##       rmse     n
+##      &lt;dbl&gt; &lt;dbl&gt;
+## 1 91.84934    50
+## 2 91.94904    52
+## 3 91.56937    54
+## 4 91.84697    56
+## 5 92.00510    58
+## 6 91.85119    60
+```
+
+---
+# Finalize bagged model
+
+
+```r
+mod &lt;- rand_forest() %&gt;% 
+    set_mode("regression") %&gt;% 
+    set_engine("ranger") %&gt;% 
+    set_args(mtry = 28,
+             min_n = 54,
+             trees = 200)
+final_fit &lt;- last_fit(mod, rec_reg, splt_reg)
+final_fit$.metrics[[1]]
+```
+
+```
+## # A tibble: 2 x 3
+##   .metric .estimator  .estimate
+##   &lt;chr&gt;   &lt;chr&gt;           &lt;dbl&gt;
+## 1 rmse    standard   96.18274  
+## 2 rsq     standard    0.3616663
+```
+
+Not bad! Still not as good as linear regression though... Also remember this is only 1% of the data (and still takes a while to run) and we didn't merge in any new variables like we did with the lab.
+
+---
+# Takeaway
+* Bagging is a great way to reduce the variance of a base learner, if that learner has high variance
+
+* In other words - take a low bias model, and reduce its variance
+
+* For models like decision trees, bagging will almost always improve performance
+
+--
+* If you learn how to estimate OOB performance with {baguette}, please let me know
+
+--
+.major-emph-green[But]
+
+--
+
+* Also messes up feature interpretation some...
+
+
+---
+class: inverse center middle
+
+# Feature interpretation
+
+---
+# Start w/{baguette}
+* Fit model to full training data
+
+
+```r
+full_train_fit &lt;- fit(
+  final_mod,
+  formula = accuracy_group ~ .,
+  data = prep(rec) %&gt;% bake(train)
+)
+```
+
+---
+# Variable importance measures
+
+```r
+full_train_fit
+```
+
+```
+## parsnip model object
+## 
+## Fit time:  13.6s 
+## Bagged CART (classification with 50 members)
+## 
+## Variable importance scores include:
+## 
+## # A tibble: 5 x 4
+##   term            value std.error  used
+##   &lt;chr&gt;           &lt;dbl&gt;     &lt;dbl&gt; &lt;int&gt;
+## 1 game_time   696.9042   5.206205    50
+## 2 event_count 534.0819   4.161773    50
+## 3 title       403.7377   4.945671    50
+## 4 event_code  214.3987   3.017074    50
+## 5 world        69.90611  5.219114    50
+```
+
+
+---
+# Plot
+
+```r
+full_train_fit$fit$imp %&gt;% 
+  mutate(term = fct_reorder(term, value)) %&gt;% 
+  ggplot(aes(term, value)) +
+  geom_col() +
+  coord_flip()
+```
+
+![](w7p2-bagging_files/figure-html/baguette-plot-1.png)&lt;!-- --&gt;
+
+---
+# VIP
+
+At present, **{vip}** and **{pdp}** do not support **{baguette}** models. But they do support **{ranger}** models.
+
+Note that you have to run the model requesting a variable importance measure.
+
+
+```r
+mod_importance &lt;- mod %&gt;%
+  set_args(importance = "permutation")
+
+full_reg_fit &lt;- fit(mod_importance,
+                    score ~ .,
+                    prepped_reg)
+```
+
+---
+# VIP (regression)
+
+```r
+library(vip)
+vip(full_reg_fit$fit)
+```
+
+![](w7p2-bagging_files/figure-html/unnamed-chunk-17-1.png)&lt;!-- --&gt;
+
+---
+# Look at PDP's
+
+
+```r
+library(pdp)
+partial(full_reg_fit$fit, 
+        train = prepped_reg, 
+        pred.var = "enrl_grd", 
+        plot = TRUE, 
+        plot.engine = "ggplot2")
+```
+
+---
+![](w7p2-bagging_files/figure-html/unnamed-chunk-19-1.png)&lt;!-- --&gt;
+
+
+---
+# Grade and Tag
+
+```r
+partial(full_reg_fit$fit, 
+        train = prepped_reg,
+        pred.var = c("enrl_grd", "tag_ed_fg"), 
+        plot = TRUE, 
+        plot.engine = "ggplot2")
+```
+
+---
+![](w7p2-bagging_files/figure-html/unnamed-chunk-21-1.png)&lt;!-- --&gt;
+
+---
+# Individual Condional Expectation Plots
+
+
+
+
+```r
+partial(full_reg_fit$fit, 
+        train = prepped_reg,
+        pred.var = "enrl_grd", 
+        plot = TRUE, 
+        plot.engine = "ggplot2", 
+*       ice = TRUE)
+```
+
+---
+
+![](w7p2-bagging_files/figure-html/unnamed-chunk-23-1.png)&lt;!-- --&gt;
+
+---
+class: inverse center middle
+# Next time
+Extending bagged trees w/Random Forests
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script src="https://platform.twitter.com/widgets.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "atelier-dune-light",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>

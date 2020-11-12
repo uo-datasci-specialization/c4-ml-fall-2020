@@ -134,19 +134,13 @@ Let's work with the same data we used w/decision trees
 ```{r import-data}
 library(tidyverse)
 full_train <- read_csv(
-    here::here("data", "data-science-bowl-2019", "train.csv"),
-    n_max = 7e4 # Limit cases for speed of producing these slides
-  ) %>%
-  select(-event_data)
-
-train_labels <- read_csv(
-  here::here("data", "data-science-bowl-2019", "train_labels.csv")
+  here::here("data", "ds-bowl-2019.csv"),
+  col_types = cols(.default = col_guess(),
+                   accuracy_group = readr::col_factor(
+                     levels = as.character(0:3),
+                     ordered = TRUE)
+                   )
 )
-
-d <- left_join(full_train, train_labels) %>% 
-  select(event_count, event_code, game_time, title, world, 
-         accuracy_group) %>% 
-  drop_na(accuracy_group)
 ```
 
 ---
@@ -155,7 +149,7 @@ d <- left_join(full_train, train_labels) %>%
 ```{r create-splits}
 library(tidymodels)
 set.seed(4520)
-splt <- initial_split(d)
+splt <- initial_split(full_train)
 train <- training(splt)
 cv <- vfold_cv(train)
 train
@@ -189,8 +183,13 @@ mod <- bag_tree() %>%
 
 ---
 # Estimate!
+I've included timings here too (we'll see why I'm not using **{tictoc}** later)
 ```{r bagged_tree1}
+m1_start <- Sys.time()
 m1 <- fit_resamples(mod, rec, cv)
+m1_end <- Sys.time()
+m1_end - m1_start
+
 show_best(m1, "roc_auc") # our best w/single model was 0.7806637
 show_best(m1, "accuracy") # our best w/single model was 0.671
 ```
@@ -244,7 +243,7 @@ plan(sequential)
 
 ```{r auc-curve, fig.height = 6}
 bags %>% 
-  mutate(b = seq(1, 200, 15)) %>% 
+  mutate(b = seq(5, 200, 15)) %>% 
   ggplot(aes(b, mean)) +
   geom_line() +
   geom_point() 
@@ -315,154 +314,157 @@ If your sample size is sufficiently large (e.g., $n$ > ~1K), using OOB samples t
 
 ---
 # How do we estimate OOB performance?
-* Good question - one I don't know the answer to, at least with tidymodels
+* Good question - I don't think you can at present, at least not with **{baguette}**
+
+I [filed an issue](https://github.com/tidymodels/baguette/issues/33) requesting this as a feature. 
+
+I don't have any idea if this will be implemented. Note that basically a version of this was implemented previously, but it's since been removed because of incompatibility with one engine (**C5.0**).
 
 
 --
-Let's look at {ipred}, which is outside of tidymodels
+Let's look at a different approach, using the *random forest* algortithm, but constraining it to fit a bagged tree model.
+
 
 ---
-# Bagging w/ipred
+class: inverse center middle
+# Using random forests for bagging
 
-```{r ipred}
-library(rpart) # base package for fitting trees
-library(ipred)
+---
+# Overview
+* Random forests include both bagging and a stochastic components to randomly select columns as each tree is built
+
+* The random selection of columns helps decorrelate the trees and is a hyperparameter in the model
+
+* If we set the number of columns to randomly select equal to the number of predictors, the model simplifies to a bagged tree model
+
+* Joe will talk more about this next week. 
+
+* Fitting the model with the [**{ranger}**]() engine allows us to access OOB predicted probabilities, which we can use to calculate our metrics
+
+
+---
+# Basic modeling setup
+
+```{r }
+bt_ranger_mod <- rand_forest() %>% 
+  set_engine("ranger") %>% 
+  set_mode("classification") %>% 
+  set_args(mtry = 5, # Specify number of predictors #<<
+           trees = 50, # Number of bags #<<
+           min_n = 2, # We can only control tree depth; no pruning #<<
+           probability = FALSE) # Build a standard classificaiton tree #<<
+```
+
+### Note
+We can be certain of our number of predictors by checking our recipe. 
+
+```{r }
+sum(rec$var_info$role == "predictor")
+```
+
+---
+# A note on specification
+
+Likely the most obtuse part of the previous was `probability = FALSE`
+
+* The default is `TRUE`, in which case *probability* trees are built, rather than standard classification trees.
+* The **functional** difference here is that the predictions from the model when `probability = TRUE` are class probabilities (for each class). When `probability = FALSE` we get the actual class predictions.
+* We need actual class predictions to calculate accuracy in a comparable way to **{rpart}**.
+
+---
+# Fit the model
+Note, I'm trying to *only fit the model once* (which still leads to 100 trees being grown). So I don't want to use something like `fit_resamples()`. Instead, I'll just use `fit()`.
+
+
+--
+
+Recall that `fit()` does *not* take a recipe object. For example, I would expec the below to work, but it does not.
+
+```{r error = TRUE}
+fit(bt_ranger_mod, rec)
+```
+
+---
+Instead, we have to prep/bake our data first
+
+```{r }
+prepped_d <- rec %>% 
+  prep() %>% 
+  bake(new_data = NULL) # could also say `bake(train)`
+```
+
+And now we can fit the model using `fit(model, formula, data)`
+
+```{r }
 tic()
-m0_ipred <- bagging(
-  accuracy_group ~ .,
-  data = juice(prep(rec)),
-  nbagg = 50, # number of boostrap resamples
-  coob = TRUE, # calculate OOB performance
-  control = rpart.control(minsplit = 2, cp = 0)
-)
+bt_ranger_fit <- fit(bt_ranger_mod, 
+                     accuracy_group ~ .,
+                     prepped_d)
 toc()
 ```
 
+```{r include = FALSE}
+elapsed_rf <- round(.Last.value$toc - .Last.value$tic, 3)
+elapsed_resamples <- round(as.double(m1_end - m1_start), 3)
+```
 ---
-```{r print-ipred}
-m0_ipred
+Print the results
+
+```{r }
+bt_ranger_fit
 ```
 
-So the OOB correct classification rate is estimated at `r round(1 - m0_ipred$err, 2)` for this model.
+---
+# Comparing results
 
+Our estimated accuracy is $1 - \text{prediction error}$ or `r 1 - bt_ranger_fit$fit$prediction.error`
 
+What did we get when using $k$-fold CV?
+
+```{r }
+show_best(m1, metric = "accuracy")
+```
+
+The results are *highly* similar, but the approach using OOB samples took only a fraction of the time. Specifically `r elapsed_resamples` minutes for `fit_resamples()`, versus just `r elapsed_rf` seconds for the OOB estimate.
 
 ---
 # Other metrics
-Let's go back to tidymodels
-
---
-
-```{r class-probs}
-class_probs <- predict(m0_ipred, 
-                       type = "prob",
-                       aggregation = "majority") %>% 
-  as_tibble() %>% 
-  mutate(observed = juice(prep(rec))$accuracy_group)
-class_probs
-```
-
----
-# AUC
-```{r auc-ipred}
-class_probs %>% 
-  roc_auc(observed, `0`:`3`)
-```
-
----
-# ROC Curve
-```{r roc-curve}
-class_probs %>% 
-  roc_curve(observed, `0`:`3`) %>% 
-  autoplot()
-```
-
----
-# What about tuning?
-* As far as I know, there's nothing you can use to *automatically* tune using OOB metrics.
-
-* Nothing stopping you from writing your own function
-
-
----
-# Quick example
+The primary other metric we've been looking at is `roc_auc`. We can estimate this with `yardstick::roc_auc()`, but for that we *need* the class probabilities. Let's re-estimate.
 
 ```{r }
-fit_model <- function(complexity, minimum_n) {
-  bagging(
-    accuracy_group ~ .,
-    data = juice(prep(rec)),
-    nbagg = 50, # number of boostrap resamples
-    coob = TRUE, # calculate OOB performance
-    control = rpart.control(minsplit = minimum_n, cp = complexity)
-  )
-}
-
-pull_accuracy <- function(model) {
-  1 - model$err
-}
+bt_ranger_mod2 <- bt_ranger_mod %>% 
+  set_args(probability = TRUE)
+bt_ranger_fit2 <- fit(bt_ranger_mod2, 
+                     accuracy_group ~ .,
+                     prepped_d)
 ```
 
 ---
-# Reminder of our grid
+# Extract predictions
+We now need to compare the OOB class probabilities with the observed classes.
 
-```{r tree-grid}
-tree_grid
+First, extract the OOB probabilities. Note that in the below I'm transforming the matrix into a tibble.
+
+```{r }
+probs <- as_tibble(bt_ranger_fit2$fit$predictions)
+probs
 ```
 
 ---
-# Fit models, pull accuracy
+Next add the observed class to this tibble. **Note:** **{ranger}** only fits to cases with observations on the outcome. So we have to eliminate missing data when we add it in. 
 
-```{r fit-mods-pull-acc}
-tic()
-ipred_tune <- tree_grid %>%
-  mutate(model = map2(cost_complexity, min_n, fit_model),
-         accuracy = map_dbl(model, pull_accuracy))
-toc()
+```{r }
+probs <- probs %>% 
+  mutate(observed = na.omit(prepped_d$accuracy_group))
+probs
 ```
 
 ---
-```{r arrange-ipred-tune}
-ipred_tune %>%
-  arrange(desc(accuracy))
-```
+# Calculate AUC
+Finally, we can calculate AUC using `yardstick::roc_auc()`
 
----
-# Extend a bit further
-If we instead try to optimize for `roc_auc`, as we did before, do we get the same results?
-
-
---
-First write a function to extract estimate`roc_auc` from a fit.
-
-```{r roc-auc-fun}
-pull_auc_ipart <- function(model) {
- probs <- predict(model, 
-                  type = "prob", 
-                  aggregation = "average") %>% 
-   as_tibble() %>% 
-   mutate(observed = juice(prep(rec))$accuracy_group)
- 
- roc_auc(probs, observed, `0`:`3`)
-}
-```
-
----
-# Remind ourselves of previous best
-
-```{r prior-best}
-select_best(bag_tune, "roc_auc")
-collect_metrics(final_fit)
-```
-
----
-# Pull AUC 
-
-```{r pull-auc-ipred}
-ipred_tune %>% 
-  mutate(auc = map(model, pull_auc_ipart)) %>% 
-  unnest(auc) %>% 
-  arrange(desc(.estimate))
+```{r }
+roc_auc(probs, truth = observed, `0`:`3`)
 ```
 
 ---
@@ -472,10 +474,9 @@ ipred_tune %>%
 ```{r load-regression-data}
 set.seed(4520)
 d <- read_csv(here::here("data",
-                         "edld-654-spring-2020",
                          "train.csv")) %>% 
   select(-classification) %>% 
-  sample_frac(0.05)
+  sample_frac(0.01)
 
 splt_reg <- initial_split(d)
 train_reg <- training(splt_reg)
@@ -495,9 +496,7 @@ rec_reg <- recipe(score ~ ., data = train_reg)  %>%
   step_unknown(all_nominal())  %>% 
   step_rollimpute(all_numeric(), -all_outcomes(), -has_role("id vars"))  %>% 
   step_medianimpute(all_numeric(), -all_outcomes(), -has_role("id vars"))  %>% # neccessary when date is NA
-  step_nzv(all_predictors(), freq_cut = 0, unique_cut = 0) %>% 
-  step_dummy(all_predictors(), -all_numeric(), -time_index)  %>% 
-  step_nzv(all_predictors()) 
+  step_zv(all_predictors(), freq_cut = 0, unique_cut = 0) 
 ```
 
 ---
@@ -512,7 +511,7 @@ tune_single_tree <- decision_tree() %>%
            min_n = tune())
 
 params <- parameters(cost_complexity(), min_n())
-grd <- grid_max_entropy(params, size = 35)
+grd <- grid_max_entropy(params, size = 50)
 ```
 
 ---
@@ -549,83 +548,126 @@ single_tree_fit$.metrics
 # Bagging
 
 ### Evaluate how many bags
+This time, let's do it with the OOB performance metric, via **{ranger}**
 
 ```{r pull_rmse}
-small_cv <- vfold_cv(train_reg, v = 2)
+# prep/bake data
+prepped_reg <- rec_reg %>% 
+  prep() %>% 
+  bake(new_data = NULL) %>% 
+  select(-contains("id"), -ncessch, -tst_dt)
 
+# number of predictors
+ncol(prepped_reg) - 1
+```
+
+---
+# Write a function
+
+```{r }
 pull_rmse <- function(b) {
   # specify model
-  mod <- bag_tree() %>% 
+  mod <- rand_forest() %>% 
     set_mode("regression") %>% 
-    set_engine("rpart", times = b) 
+    set_engine("ranger") %>% 
+    set_args(mtry = 28,
+             min_n = 2,
+             trees = b)
   
   # fit model to full training dataset
-  m <- fit_resamples(mod, rec_reg, small_cv)
+  m <- fit(mod, score ~ ., prepped_reg)
   
-  show_best(m, "rmse")
+  # Extract RMSE, store as a tibble
+  tibble(rmse = sqrt(m$fit$prediction.error))
 }
 ```
 
 ---
 # Estimate
+Note I'm not using parallel processing here and it's still relatively fast.
+
 ```{r learning-curve-rmse}
-plan(multisession)
 tic()
-bags_reg <- map_df(seq(1, 301, 25), pull_rmse) 
+bags_reg <- map_df(seq(1, 500, 25), pull_rmse) 
 toc()
-plan(sequential)
 ```
 
 ---
 # plot
 ```{r plot-rmse-curve, fig.height = 6}
 bags_reg %>% 
-  mutate(b = seq(1, 301, 25)) %>% 
-  ggplot(aes(b, mean)) +
+  mutate(b = seq(1, 500, 25)) %>% 
+  ggplot(aes(b, rmse)) +
   geom_line() +
   geom_point() +
-  geom_vline(xintercept = 80, color = "magenta", lwd = 1.3)
+  geom_vline(xintercept = 155, color = "magenta", lwd = 1.3)
 ```
 
 ---
-# Tune
-```{r tune-bag-regression}
-tune_bagged_tree <- bag_tree() %>% 
-  set_mode("regression") %>% 
-  set_engine("rpart", times = 80) %>% 
-  set_args(cost_complexity = tune(),
-           min_n = tune())
+# Tune `min_n`
 
-plan(multisession)
+Tuning with OOB metrics requires a bit more "manual" coding. This is basically the same as when evaluating the number of bags needed.
+
+Note that I've used 200 bags just to be overly cautious. 
+
+```{r tune-bag-regression}
+tune_min_n <- function(n) {
+  mod <- rand_forest() %>% 
+    set_mode("regression") %>% 
+    set_engine("ranger") %>% 
+    set_args(mtry = 28,
+             min_n = n,
+             trees = 200)
+  
+  # fit model to full training dataset
+  m <- fit(mod, score ~ ., prepped_reg)
+  
+  # Extract RMSE, store as a tibble
+  tibble(rmse = sqrt(m$fit$prediction.error))
+}
+```
+
+---
+```{r }
 tic()
-bagged_tree_grid <- tune_grid(
-  tune_bagged_tree,
-  rec_reg,
-  cv_reg,
-  grid = grd,
-  control = control_resamples(verbose = TRUE)
-)
+optimal_n <- map_df(seq(2, 170, 2), tune_min_n) 
 toc()
-plan(sequential)
+```
+
+---
+# Check learning curve
+
+```{r }
+optimal_n %>% 
+  mutate(n = seq(2, 170, 2)) %>% 
+  ggplot(aes(n, rmse)) +
+  geom_line() +
+  geom_point() 
+
+optimal_n %>% 
+  mutate(n = seq(2, 170, 2)) %>% 
+  filter(n > 48 & n < 62)
 ```
 
 ---
 # Finalize bagged model
 
 ```{r finalize-bagged-tree}
-show_best(bagged_tree_grid, "rmse")
-bagged_tree <- tune_bagged_tree %>% 
-  finalize_model(select_best(bagged_tree_grid, "rmse"))
-
-bagged_tree_fit <- last_fit(bagged_tree, rec_reg, splt_reg)
-bagged_tree_fit$.metrics
+mod <- rand_forest() %>% 
+    set_mode("regression") %>% 
+    set_engine("ranger") %>% 
+    set_args(mtry = 28,
+             min_n = 54,
+             trees = 200)
+final_fit <- last_fit(mod, rec_reg, splt_reg)
+final_fit$.metrics[[1]]
 ```
 
-Getting much better! Still not as good as linear regression though... Also remember this is only 5% of the data (and still takes a while to run) and we didn't merge in any new variables like we did with the lab.
+Not bad! Still not as good as linear regression though... Also remember this is only 1% of the data (and still takes a while to run) and we didn't merge in any new variables like we did with the lab.
 
 ---
 # Takeaway
-* Bagging, via the {baguette} package, is a great way to reduce the variance of a base learner, if that learner has high variance
+* Bagging is a great way to reduce the variance of a base learner, if that learner has high variance
 
 * In other words - take a low bias model, and reduce its variance
 
@@ -641,37 +683,23 @@ Getting much better! Still not as good as linear regression though... Also remem
 
 * Also messes up feature interpretation some...
 
+
 ---
 class: inverse center middle
 
 # Feature interpretation
 
 ---
-# Why is this important?
-* No longer one tree (can't follow a branch to a terminal node). 
-
-* How many splits in each of the first five trees?
-
-```{r splits-by-tree}
-for(i in 1:5) {
-  m0_ipred$mtrees[[i]]$btree$cptable[ ,"nsplit"] %>% 
-    tail(n = 1) %>% 
-    unname() %>% 
-    print()
-}
-```
-
----
 # Start w/{baguette}
 * Fit model to full training data
 
 ```{r baguette-feat-imp}
-full_train_fit <- fit(bagged_tree, 
-                      score ~ .,
-                      select(juice(prep(rec_reg)), -ncessch, -contains("id"))
+full_train_fit <- fit(
+  final_mod,
+  formula = accuracy_group ~ .,
+  data = prep(rec) %>% bake(train)
 )
 ```
-
 
 ---
 # Variable importance measures
@@ -682,10 +710,10 @@ full_train_fit
 
 ---
 # Plot
-```{r baguette-plot}
+```{r baguette-plot, fig.height = 6}
 full_train_fit$fit$imp %>% 
   mutate(term = fct_reorder(term, value)) %>% 
-ggplot(aes(term, value)) +
+  ggplot(aes(term, value)) +
   geom_col() +
   coord_flip()
 ```
@@ -693,42 +721,66 @@ ggplot(aes(term, value)) +
 ---
 # VIP
 
-At present, `{vip}` and `{pdp}` don't support `{baguette}` models (it's brand new). So first refit using `{ipred}`
+At present, **{vip}** and **{pdp}** do not support **{baguette}** models. But they do support **{ranger}** models.
 
-```{r label, options}
-best_params <- select_best(bagged_tree_grid, "rmse")
+Note that you have to run the model requesting a variable importance measure.
 
-full_train_fit <- bagging(
-    score ~ .,
-    data = select(juice(prep(rec_reg)), -ncessch, -contains("id")),
-    nbagg = 80,
-    coob = TRUE, 
-    control = rpart.control(minsplit = best_params$min_n, 
-                            cp = best_params$cost_complexity)
-)
+```{r }
+mod_importance <- mod %>%
+  set_args(importance = "permutation")
+
+full_reg_fit <- fit(mod_importance,
+                    score ~ .,
+                    prepped_reg)
 ```
 
 ---
-# Look across a couple trees
-```{r patchwork-vip, fig.height = 6}
-library(patchwork)
+# VIP (regression)
+```{r}
 library(vip)
-vips <- map(full_train_fit$mtrees[1:4],  ~vip(pluck(.x, "btree")))
-reduce(vips[1:2], `+`) / reduce(vips[3:4], `+`)
+vip(full_reg_fit$fit)
 ```
 
 ---
 # Look at PDP's
-* Notice I don't have to do this by tree now (vip doesn't work w/boosted trees)
 
-```{r grade-pdp, fig.height = 6}
+```{r eval = FALSE}
 library(pdp)
-partial(full_train_fit, pred.var = "enrl_grd", plot = TRUE, plot.engine = "ggplot2")
+partial(full_reg_fit$fit, 
+        train = prepped_reg, 
+        pred.var = "enrl_grd", 
+        plot = TRUE, 
+        plot.engine = "ggplot2")
 ```
 
 ---
-```{r grade-tag-pdp}
-partial(full_train_fit, pred.var = c("enrl_grd", "tag_ed_fg_Y"), plot = TRUE, plot.engine = "ggplot2")
+```{r echo = FALSE, fig.height = 9}
+library(pdp)
+partial(full_reg_fit$fit, 
+        train = prepped_reg, 
+        pred.var = "enrl_grd", 
+        plot = TRUE, 
+        plot.engine = "ggplot2")
+```
+
+
+---
+# Grade and Tag
+```{r eval = FALSE}
+partial(full_reg_fit$fit, 
+        train = prepped_reg,
+        pred.var = c("enrl_grd", "tag_ed_fg"), 
+        plot = TRUE, 
+        plot.engine = "ggplot2")
+```
+
+---
+```{r echo = FALSE, fig.height = 9}
+partial(full_reg_fit$fit, 
+        train = prepped_reg,
+        pred.var = c("enrl_grd", "tag_ed_fg"), 
+        plot = TRUE, 
+        plot.engine = "ggplot2")
 ```
 
 ---
@@ -738,12 +790,29 @@ partial(full_train_fit, pred.var = c("enrl_grd", "tag_ed_fg_Y"), plot = TRUE, pl
 update_geom_defaults('path', list(size = 0.3, color = "gray70"))
 ```
 
-```{r tag-icd, fig.height = 6}
-partial(full_train_fit, pred.var = "enrl_grd", plot = TRUE, plot.engine = "ggplot2", ice = TRUE)
+```{r eval = FALSE}
+partial(full_reg_fit$fit, 
+        train = prepped_reg,
+        pred.var = "enrl_grd", 
+        plot = TRUE, 
+        plot.engine = "ggplot2", 
+        ice = TRUE) #<<
 ```
 
+---
+
+```{r echo = FALSE, warning = FALSE, fig.height = 9}
+partial(full_reg_fit$fit, 
+        train = prepped_reg,
+        pred.var = "enrl_grd", 
+        plot = TRUE, 
+        plot.engine = "ggplot2", 
+        ice = TRUE) 
+```
 
 ---
 class: inverse center middle
 # Next time
 Extending bagged trees w/Random Forests
+
+
