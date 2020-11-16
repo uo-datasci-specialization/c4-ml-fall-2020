@@ -1,0 +1,348 @@
+---
+title: "w8 Random Forests"
+author: "Joe Nese"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      cache = TRUE)
+
+library(tidyverse)
+library(tidymodels)
+library(tictoc)
+library(doParallel)
+library(vip)
+library(pdp)
+library(patchwork)
+
+theme_set(theme_minimal())
+```
+
+# Data
+```{r, data}
+set.seed(3000)
+math <- read_csv(here::here("data", "train.csv")) %>% 
+  select(-score) %>% 
+  sample_frac(.04)
+
+sheets <- readxl::excel_sheets(here::here("data", "fallmembershipreport_20192020.xlsx"))
+
+ode_schools <- readxl::read_xlsx(here::here("data", "fallmembershipreport_20192020.xlsx"), sheet = sheets[4])
+
+ethnicities <- ode_schools %>%
+  select(attnd_schl_inst_id = `Attending School ID`,
+         attnd_dist_inst_id = `Attending District Institution ID`,
+         sch_name = `School Name`,
+         contains("%")) %>%
+  janitor::clean_names()
+
+names(ethnicities) <- gsub("x2019_20_percent", "p", names(ethnicities))
+
+math <- left_join(math, ethnicities)
+```
+
+# Split and Resample
+```{r}
+set.seed(3000)
+math_split <- initial_split(math, strata = "classification")
+
+set.seed(3000)
+math_train <- training(math_split)
+math_test <- testing(math_split)
+
+set.seed(3000)
+math_cv <- vfold_cv(math_train, strata = "classification")
+
+```
+
+# Recipe
+```{r}
+rf_rec <- recipe(classification ~ ., math_train) %>% 
+  step_mutate(tst_dt = lubridate::mdy_hms(tst_dt)) %>%
+  step_mutate(classification = factor(recode(classification,
+                                      `1` = "wellbelow",
+                                      `2` = "below",
+                                      `3` = "above",
+                                      `4` = "wellabove"))) %>% 
+  step_rm(contains("bnch")) %>% 
+  update_role(contains("id"), ncessch, sch_name, new_role = "id") %>%
+  step_novel(all_nominal(), -all_outcomes())  %>% 
+  step_unknown(all_nominal(), -all_outcomes()) %>% 
+  step_medianimpute(all_numeric()) %>% 
+  step_nzv(all_predictors(), freq_cut = 0, unique_cut = 0) %>%
+  step_dummy(all_nominal(), -has_role(match = "id"), -all_outcomes()) %>% 
+  step_nzv(all_predictors()) 
+
+prep(rf_rec) %>% bake(., new_data = NULL) 
+
+```
+
+# Default Model
+```{r}
+floor(sqrt(39))
+
+(cores <- parallel::detectCores())
+
+rf_def_mod <-
+  rand_forest() %>% 
+  set_engine("ranger",
+             num.threads = cores, #argument from {ranger}
+             importance = "permutation", #argument from {ranger} 
+             verbose = TRUE) %>% #argument from {ranger} 
+  set_mode("classification")
+
+translate(rf_def_mod)
+
+```
+
+# Tuned Model
+```{r}
+rf_tune_mod <- rf_def_mod %>% 
+  set_args(
+    mtry = tune(),
+    trees = 1000,
+    min_n = tune()
+  )
+
+translate(rf_tune_mod)
+```
+
+# Workflow
+```{r}
+
+rf_def_workflow <- 
+  workflow() %>% 
+  add_model(rf_def_mod) %>% 
+  add_recipe(rf_rec)
+
+rf_tune_workflow <- 
+  workflow() %>% 
+  add_model(rf_tune_mod) %>% 
+  add_recipe(rf_rec)
+
+
+```
+
+# Fit Default Model (with workflows)
+```{r}
+tictoc::tic()
+set.seed(3000)
+rf_def_res <- fit_resamples(
+  #rf_def_mod,
+  #rf_rec,
+  rf_def_workflow,
+  math_cv,
+  control = control_resamples(verbose = TRUE,
+                              save_pred = TRUE,
+                              extract = function(x) x)
+)
+tictoc::toc()
+
+rf_def_res
+
+rf_def_res$.extracts[[1]]
+
+pluck(rf_def_res$.extracts[[1]]$.extracts, 1)
+
+rf_def_res %>% 
+  mutate(oob = map_dbl(.extracts,
+                       ~pluck(.x$.extracts, 1)$fit$fit$fit$prediction.error)) %>% 
+  select(id, oob)
+
+rf_def_res %>% 
+  collect_metrics(summarize = FALSE) %>% 
+  filter(.metric == "accuracy")
+
+
+pluck(rf_def_res$.extracts[[1]]$.extracts, 1) %>%
+  pull_workflow_fit() %>% 
+  vip()
+
+rf_def_res %>% 
+  mutate(vip = map(.extracts,
+                   ~pluck(.x$.extracts, 1) %>% 
+                     pull_workflow_fit() %>% 
+                     vip())) %>% 
+  select(id, vip)
+
+pluck(rf_def_res$.extracts[[1]]$.extracts, 1) %>% 
+  pull_workflow_preprocessor()
+
+```
+
+# Fit Tuned Model
+```{r}
+tictoc::tic()
+set.seed(3000)
+rf_tune_res <- tune_grid(
+  rf_tune_workflow,
+  math_cv,
+  tune = 20,
+  control = control_resamples(verbose = TRUE,
+                              save_pred = TRUE,
+                              extract = function(x) extract_model(x))
+)
+tictoc::toc()
+
+rf_tune_res
+
+rf_tune_res$.extracts[[1]]
+
+rf_tune_res$.extracts[[1]]$.extracts[[1]]
+
+rf_tune_res$.extracts[[1]]$.extracts[[1]] %>% 
+  vip()
+
+rf_tune_res$.extracts[[1]]$.extracts[[1]] %>% 
+  pull_workflow_preprocessor()
+```
+
+
+#Compare default to tuned
+```{r}
+rf_def_res %>% 
+  collect_metrics() 
+
+rf_tune_res %>% 
+  collect_metrics() %>% 
+  arrange(.metric, desc(mean)) %>% 
+  group_by(.metric) %>% 
+  slice(1:5)
+
+rf_tune_res %>% 
+  autoplot() + 
+  geom_line()
+```
+
+## Create new grid
+```{r}
+
+rf_grid_reg <- grid_regular(
+  mtry(range = c(1, 5)),
+  min_n(range = c(40, 55)),
+  levels = c(5, 4)
+)
+
+rf_grid_reg %>% ggplot(aes(mtry, min_n)) + geom_point()
+
+tictoc::tic()
+set.seed(3000)
+rf_grid_res <- tune_grid(
+  rf_tune_workflow,
+  math_cv,
+  grid = rf_grid_reg,
+  control = control_resamples(verbose = TRUE,
+                              save_pred = TRUE)
+)
+tictoc::toc()
+# 1319.22 sec elapsed (22 min)
+
+rf_grid_res %>% 
+  autoplot() +
+  geom_line()
+
+show_best(rf_tune_res, metric = "accuracy", n = 10) %>% 
+  bind_rows(show_best(rf_tune_res, metric = "roc_auc", n = 10)) %>% 
+  group_by(.metric) %>% 
+  slice(1:5)
+
+show_best(rf_grid_res, metric = "accuracy", n = 10) %>% 
+  bind_rows(show_best(rf_grid_res, metric = "roc_auc", n = 10)) %>% 
+  group_by(.metric) %>% 
+  slice(1)
+
+select_best(rf_tune_res, metric = "roc_auc")
+select_best(rf_grid_res, metric = "roc_auc")
+
+```
+
+# Finalize Model
+```{r}
+rf_best <- select_best(rf_grid_res, metric = "roc_auc")
+
+rf_wf_final <- finalize_workflow(
+  rf_tune_workflow,
+  rf_best
+)
+
+rf_wf_final
+
+tictoc::tic()
+set.seed(3000)
+rf_res_final <- last_fit(rf_wf_final,
+                         split = math_split)
+tictoc::toc()
+rf_res_final
+
+
+```
+
+# VIP
+```{r}
+
+rf_res_final %>% 
+  pluck(".workflow", 1)
+
+rf_res_final %>% 
+  pluck(".workflow", 1) %>% 
+  pull_workflow_fit() %>% 
+  vip()
+
+rf_res_final %>% 
+  collect_metrics()
+
+?ranger::ranger
+
+rf_res_final %>% 
+  pluck(".workflow", 1) %>% 
+  pull_workflow_fit() %>% 
+  vip(geom = "point",
+      num_features = 20) + 
+  labs(y = "Importance (permutation)",
+      title = "vip()") 
+
+```
+
+#PD Plot
+```{r}
+
+rf_res_final %>%
+  pluck(".workflow", 1) %>%
+  pull_workflow_fit() %>%
+  partial(pred.var = "enrl_grd",
+          train = juice(prep(rf_rec)),
+          type = "classification",
+          plot = TRUE,
+          rug = TRUE,
+          plot.engine = "ggplot2")
+
+rf_res_final$.workflow[[1]]$fit$fit$fit %>% 
+  partial(pred.var = "enrl_grd",
+          train = juice(prep(rf_rec)),
+          type = "classification",
+          plot = TRUE,
+          rug = TRUE,
+          plot.engine = "ggplot2") 
+
+ 
+rf_res_final$.workflow[[1]]$fit$fit$fit %>% 
+  partial(pred.var = "tag_ed_fg_Y",
+          train = juice(prep(rf_rec)),
+          type = "classification",
+          plot = TRUE,
+          rug = TRUE,
+          plot.engine = "ggplot2")  
+
+rf_res_final$.workflow[[1]]$fit$fit$fit %>% 
+  partial(pred.var = c("econ_dsvntg_Y", "p_white"),
+          train = juice(prep(rf_rec)),
+          type = "classification",
+          plot = TRUE,
+          rug = TRUE,
+          plot.engine = "ggplot2") 
+
+
+```
+
+
