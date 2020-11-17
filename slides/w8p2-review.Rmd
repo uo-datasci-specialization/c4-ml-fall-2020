@@ -1,0 +1,90 @@
+---
+title: "Quick Review"
+subtitle: "And 'when to do what'"
+author: "Daniel Anderson "
+date: "Week 8, Class 2 "
+output:
+  xaringan::moon_reader:
+    css: ["default", "uo", "uo-fonts", "hygge", "custom.css"]
+    lib_dir: libs
+    nature:
+      highlightStyle: atelier-dune-light
+      highlightLines: true
+      countIncrementalSlides: false
+      beforeInit: "https://platform.twitter.com/widgets.js"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(fig.width = 13, 
+                      message = FALSE, 
+                      warning = FALSE,
+                      echo = TRUE,
+                      cache = TRUE)
+
+library(tidyverse)
+
+```
+
+# Inference vs Prediction
+
+* Remember - we're not talking about inference
+  + In the world of inference, the *type* of model you fit can matter a lot in terms of the inferences you make. This is true both because of assumptions of the given model, and the means by which you interpret it
+  
+* We are focused on *model performance*
+  + Model interpretability is important for communication and trustworthiness of the model predictions, but is not the focus of *why* we build the model
+  
+---
+# Bias-Variance tradeoff
+
+* Models with high bias are far of in their predictions - they don't fit the data well
+
+* Models with high variance *change* in their predictions a lot from one sample to the next
+
+* Generally, as the bias decreases, the variance increases
+
+* We want to build models that *optimize* the bias-variance tradeoff
+
+
+--
+
+.major-emph-green[But]
+
+The best model for that is going to depend on our
+
+* Data
+* Objective function (what we're trying to minimize or maximize)
+* Feature engineering
+
+---
+# General advice
+
+* Start with a simple model that is widely used, like linear regression - this can be a good benchmark
+
+* Compare the performance of this model to alternative methods
+
+* Make a final decision based on the context of the problem (balance model interpretability with performance and other considerations, such as computation time)
+
+---
+# Best "out of the box" models
+Random forests and boosted trees (next week) tend to have among the best model performance without much model tuning.
+
+These are good models to start off with for model comparisons
+
+If your model performance is still not high enough for practical use, start by revisiting your feature engineering and consider the inclusion of other data sources
+
+
+---
+# Evaluation
+Use your training data to develop all competing models. 
+
+Once you have finalized all hyperparameters (you have tuned your models) **evaluate all models against the test set**
+
+Note this is different than going back to the training data to develop a new model if your test performance is not what you expected
+
+---
+class: inverse center middle 
+
+# Thoughts? Questions?
+
+
+
