@@ -15,7 +15,7 @@ output:
 | 2      | [Penalized Regression](lab2.Rmd)                              | 10/21/20     | 10/28/20 | 
 | 3      | [Feature Engineering](https://www.kaggle.com/djanderson07/lab-3)                               | 10/28/20     | 11/4/20  | 
 | 4      | [*K*-nearest neighbor](lab4.html)                              | 11/4/20      | 11/11/20 | 
-| 5      | Random forests/bagging                            | 11/18/20     | 11/25/20 | 
+| 5      | [Random forests/bagging](lab5.html)                            | 11/18/20     | 11/25/20 | 
 
 
 # Final Project
