@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>Gradient Boosting (with trees)</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Daniel Anderson" />
+    <link href="libs/remark-css-0.0.1/default.css" rel="stylesheet" />
+    <link href="libs/remark-css-0.0.1/uo.css" rel="stylesheet" />
+    <link href="libs/remark-css-0.0.1/uo-fonts.css" rel="stylesheet" />
+    <link href="libs/remark-css-0.0.1/hygge.css" rel="stylesheet" />
+    <link rel="stylesheet" href="custom.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# Gradient Boosting (with trees)
+### Daniel Anderson
+### Week 9, Class 1
+
+---
+
+
+
+
+# Agenda
+* Boosting
+
+* Gradient descent
+
+* Standard boosted tree hyperparameters
+
+* Additional hyperparameters with **{xgboost}**
+
+* Initial implementation with {tidymodels}
+  
+  + This will mostly be for Wednesday
+
+---
+# Quick scheduling note
+* Next Monday, we have a scheduled work day. This is intended for you to work with your group on your final project, while having Joe and I present to help you work though any problems
+
+  + If you are having specific issues, that would be a great time for us to help you solve them
+  
+  + Otherwise, it's a designated time for you all to work together
+  
+
+--
+* Next Wednesday, we will cover [Keras](https://keras.rstudio.com/index.html) in [#rstats](https://twitter.com/hashtag/rstats)
+
+* Keras is a high-level API for neural nets - can use numerous back-ends for estimation, including [TensorFlow](https://www.tensorflow.org)
+
+
+---
+# Before Wednesday!
+
+Please run the following:
+
+
+```r
+install.packages("keras")
+keras::install_keras()
+```
+
+We'll run through some basic models and hopefully have you fitting some basic neural nets by the end
+
+Please do this ASAP, and if you run into issues, please contact me
+
+---
+# Quick review
+
+* For bagged trees and random forests, we create `\(b\)` bootstrap resamples of the training data. We then fit a model to each resample and aggregate the results for a single prediction
+
+
+--
+* Random forests include an additional stochastic component, sampling `\(m\)` features for each split in each tree for every resample, which can help decorrelate the trees and lead to better predictions
+
+
+--
+* For each of these models, you need a *sufficient* number of resamples to obtain a stable estimate, but additional resamples will only "cost" in terms of computational efficiency 
+
+
+---
+# Boosting
+
+* Like bagging, boosting is a general algorithm that can be applied to any model, but it's very common with trees
+
+
+--
+* Like bagging, boosting is an ensemble approach, where many models are fit to the data
+
+
+--
+### Key difference from bagging
+* Rather than using boostrapping, boosted models are built .b[.ital[sequentially]], with each model fit to the residuals from the previous
+
+
+--
+* information from tree 1 .b[feeds into] tree 2, which .b[feeds into] tree 3... etc.
+
+
+---
+background-image: url(https://bradleyboehmke.github.io/HOML/images/boosted-trees-process.png)
+background-size: contain
+# Boosting illustrated
+
+
+.footnote[https://bradleyboehmke.github.io/HOML/gbm.html]
+
+
+---
+# Components of boosting
+
+* .bolder[.b[Base learner]]: The model that is iteratively fit. Can be any model but is regularly a .ital[shallow] decision tree
+
+
+--
+* .bolder[.b[Weak models]]: Improves error rate only slightly more than chance. The weak learning is boosted by the iterative fit, and the model learns slow 
+
+    + Trees with 1-6 splits are common
+
+
+  
+--
+* .bolder[.b[Sequential fit]]: See algorithm on next slide
+
+---
+# Sequential fitting algorithm
+
+1. Fit a decision tree to the data: `\(f_1\left(x\right) = y\)`
+
+
+--
+2. Fit a second decision tree to the residuals of the first: `\(h_1\left(x\right) = y - f_1\left(x\right)\)`
+
+
+--
+3. Add the trees together to obtain an ensemble algorithm: `\(f_2\left(x\right) = f_1\left(x\right) + h_1\left(x\right)\)`
+
+
+--
+4. Fit a new decision tree to the residuals of this model: `\(h_2\left(x\right) = y - f_2\left(x\right)\)`
+
+
+--
+5. Add this tree to our ensemble: `\(f_3\left(x\right) = f_2\left(x\right) + h_2\left(x\right)\)`
+
+
+--
+6. Continue onward until some criterion (stopping rule) is met
+
+---
+# Final Model
+
+$$
+f\left(x\right) =  \sum^B_{b=1}f^b\left(x\right)
+$$
+
+---
+# Slow learning
+
+* Boosted models typically .ital[learn slow], which may sound bad, but is actually helpful in finding an optimal solution
+
+
+--
+* Each tree is very shallow, and learns little about the data on its own
+
+
+--
+* By contrast, random forests include aggregation across many deep, independent trees (i.e., each tree learns a lot, but variance is reduced through averaging)
+
+
+---
+background-image: url(https://bradleyboehmke.github.io/HOML/10-gradient-boosting_files/figure-html/boosting-in-action-1.png)
+background-size: contain
+class: inverse
+
+### Slow Learning Illustrated
+
+.footnote[https://bradleyboehmke.github.io/HOML/gbm.html]
+
+
+---
+# Note, this doesn't mean it's always optimal
+
+* In a simple linear regression case, where we *know* how the data were generated, linear regression still wins!
+
+* This can be the case even if we *don't know* how the underlying data were generated, but the problem is relatively simple.
+
+
+---
+# Quick example
+
+
+```r
+set.seed(3)
+
+# parameters
+alpha &lt;- 10
+b1 &lt;- 5
+x &lt;- 1:100
+log_x &lt;- log(x)
+e &lt;- rnorm(length(x), sd = 0.8)
+
+#outcome
+y &lt;- alpha + b1*log_x + e
+
+sim &lt;- data.frame(x, y)
+```
+
+
+---
+# Plot
+
+
+```r
+library(tidyverse)
+ggplot(sim, aes(x, y)) +
+  geom_point()
+```
+
+![](w9p1-boosted-trees-1_files/figure-html/unnamed-chunk-2-1.png)&lt;!-- --&gt;
+
+---
+# Modeling
+* In this case, the "best" model is one that models exactly the function that created the data - log transforming `x`
+
+* We can get *close* to this with a spline
+
+* Although a boosted tree model is often among the best "out of the box" models, it will not do as well as either of the previous models, in this (very simple case)
+
+---
+# Illustration
+
+### Create recipes for log transformation and a B-spline
+
+Quick side-note: Any idea why I'm using a B-spline instead of a natural spline?
+
+
+```r
+library(tidymodels)
+rec_log &lt;- recipe(y ~ x, sim) %&gt;% 
+  step_log(x)
+
+rec_spline &lt;- recipe(y ~ x, sim) %&gt;% 
+  step_bs(x, deg_free = tune())
+```
+
+---
+# Candidate models
+
+* I'm omitting the code for for boosted trees because I'll be fitting it outside of the **{tidymodels}** framework, but we'll get there soon (wiht **{tidymodels}**).
+
+
+```r
+# linear regression
+lin_mod &lt;- linear_reg() %&gt;% 
+  set_mode("regression") %&gt;% 
+  set_engine("lm")
+```
+
+---
+# Create CV object, estimate
+
+
+```r
+cv_lin &lt;- vfold_cv(sim)
+
+# fit log transform
+log_fit &lt;- fit_resamples(lin_mod, rec_log, cv_lin)
+collect_metrics(log_fit)
+```
+
+```
+## # A tibble: 2 x 5
+##   .metric .estimator      mean     n     std_err
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt; &lt;int&gt;       &lt;dbl&gt;
+## 1 rmse    standard   0.6776624    10 0.03110880 
+## 2 rsq     standard   0.9701750    10 0.008851531
+```
+
+---
+# Tune spline
+
+
+```r
+grid_spline &lt;- grid_regular(deg_free(c(3, 25)), 
+                            levels = 15)
+tuned_spline &lt;- tune_grid(lin_mod, 
+                          rec_spline,
+                          cv_lin,
+                          grid = grid_spline)
+
+rec_spline_f &lt;- finalize_recipe(rec_spline,
+                                select_best(tuned_spline, metric = "rmse"))
+
+fit_spline &lt;- fit_resamples(lin_mod, rec_spline_f, cv_lin)
+collect_metrics(fit_spline)
+```
+
+```
+## # A tibble: 2 x 5
+##   .metric .estimator      mean     n     std_err
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt; &lt;int&gt;       &lt;dbl&gt;
+## 1 rmse    standard   0.7103735    10 0.04391925 
+## 2 rsq     standard   0.9702860    10 0.007592861
+```
+
+---
+# Standard boosted tree
+
+
+```
+## # A tibble: 2 x 5
+## # Groups:   .metric [2]
+##   .metric .estimator      mean     n    std_err
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt; &lt;dbl&gt;      &lt;dbl&gt;
+## 1 rmse    standard   1.554065     10 0.9951414 
+## 2 rsq     standard   0.9155545    10 0.08098759
+```
+
+Note that the boosted tree model has both lower average performance *and* higher variance.
+
+--
+
+Does that mean it's a crappy model and we shouldn't be learning it? **No!** It just means that in this one, very simple case, it doesn't perform as well as simpler models
+
+---
+# Visualizing these fits
+
+![](w9p1-boosted-trees-1_files/figure-html/unnamed-chunk-8-1.png)&lt;!-- --&gt;
+
+---
+# Out of the box performance
+* Despite what we just saw, boosted tree models are typically one of the "best" out-of-the-box model for performance on tabular data
+
+* One of the most frequent algorithms used across Kaggle winners (although there's a few new variants that have been gaining popularity)
+
+* A boosted model "when appropriately tuned, is often hard to beat with other algorithms" ([Bohemke &amp; Greenwell](https://bradleyboehmke.github.io/HOML/gbm.html))
+
+* Doesn't mean it's **always** better than simpler models, but if you have complex data, it's likely to perform well.
+
+---
+class: inverse center middle
+# Gradient Descent
+
+
+---
+# Gradient Descent
+
+* General purpose optimization algorithm
+
+--
+* Gradient descent and its variants (e.g., stochastic gradient descent) are used throughout many advanced ML applications (e.g., deep learning)
+
+
+--
+* Evaluate prediction against a cost function (objective function to minimize) and move in direction of steepest descent until you reach a minimum
+
+--
+* Gradient descent is used with boosted trees to inform how each subsequent tree should be built
+
+---
+background-image:url(https://ml-cheatsheet.readthedocs.io/en/latest/_images/gradient_descent.png)
+background-size: cover
+
+.footnote[https://ml-cheatsheet.readthedocs.io/en/latest/gradient_descent.html]
+
+---
+class: inverse center middle
+
+# Learning rate
+
+
+---
+# Illustration with linear regression
+
+### Feel free to follow along!
+
+* First, simulate some data
+
+
+```r
+set.seed(8675309)
+n &lt;- 1000
+x &lt;- rnorm(n)
+
+a &lt;- 5
+b &lt;- 1.3
+e &lt;- 4
+
+y &lt;- a + b*x + rnorm(n, sd = e)
+```
+
+---
+# Plot
+
+
+```r
+sim_d &lt;- tibble(x = x, y = y)
+ggplot(sim_d, aes(x, y)) +
+  geom_point() 
+```
+
+![](w9p1-boosted-trees-1_files/figure-html/plot-sim-1.png)&lt;!-- --&gt;
+
+---
+# Estimate w/OLS
+
+Note that this is both *really fast* (about a tenth of a second) and is the best, linear, unbiased estimate (BLUE)
+
+
+```r
+sim_ols &lt;- lm(y ~ x)
+summary(sim_ols)
+```
+
+```
+## 
+## Call:
+## lm(formula = y ~ x)
+## 
+## Residuals:
+##      Min       1Q   Median       3Q      Max 
+## -15.4097  -2.8122  -0.1298   2.7710  14.1251 
+## 
+## Coefficients:
+##             Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)   5.0924     0.1298   39.22   &lt;2e-16 ***
+## x             1.4135     0.1270   11.13   &lt;2e-16 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Residual standard error: 4.104 on 998 degrees of freedom
+## Multiple R-squared:  0.1104,	Adjusted R-squared:  0.1095 
+## F-statistic: 123.8 on 1 and 998 DF,  p-value: &lt; 2.2e-16
+```
+
+
+---
+# Estimate with gradient descent
+* First, define the cost function (mean square error)
+
+$$
+\frac{1}{N} \sum_{i=1}^{n} (y_i - (a + bx_i ))^2
+$$
+
+--
+* Next, calculate the partial derivative of each parameter .g[this is not my strong suit]
+
+
+--
+$$
+   \begin{bmatrix}
+     \frac{d}{da}\\\\
+     \frac{d}{db}\\\\
+    \end{bmatrix}
+=
+   \begin{bmatrix}
+     \frac{1}{N} \sum -2(y_i - (a + bx_i)) \\\\
+     \frac{1}{N} \sum -2x_i(y_i - (a + bx_i)) \\\\
+    \end{bmatrix}
+$$
+
+---
+# Gradient descent
+* The partial derivatives of the cost function define gradient
+
+
+--
+* We move in the steepest direction
+
+
+--
+* The amount we move is defined by our learning rate, which is multiplied by the partial derivative values
+
+
+--
+* The resulting value is then subtracted (because we're minimizing) from our *current* parameter estimate
+
+
+--
+* Iterate until no improvements are made
+
+---
+# Gradient descent "by hand"
+
+Let's start by writing a function to calculate the mean squared error (our cost function)
+
+
+```r
+mse &lt;- function(a, b, x = sim_d$x, y = sim_d$y) {
+  prediction &lt;- a + b*x # model prediction, given intercept/slope
+  residuals &lt;- y - prediction # distance between prediction &amp; observed
+  squared_residuals &lt;- residuals^2 # squared to avoid summation to zero
+  ssr &lt;- sum(squared_residuals) # sum of squared distances
+  
+  mean(ssr) # average of squared distances
+}
+```
+
+---
+# Double check 
+Does our function work? Let's use the OLS coefficients to compute the MSE, then compare this to what we get from the actual model residuals.
+
+
+```r
+mse(a = coef(sim_ols)[1], b = coef(sim_ols)[2])
+```
+
+```
+## [1] 16809.93
+```
+
+```r
+sum(resid(sim_ols)^2)
+```
+
+```
+## [1] 16809.93
+```
+
+### Hooray!
+
+---
+# Explore other candidate lines
+We're trying to minimize the MSE. Let's just try a few other lines
+
+
+```r
+mse(0.5, 3)
+```
+
+```
+## [1] 40915.99
+```
+
+```r
+mse(1, 2)
+```
+
+```
+## [1] 34044.36
+```
+
+```r
+mse(1, 3)
+```
+
+```
+## [1] 36531.42
+```
+
+```r
+mse(1, 1.5)
+```
+
+```
+## [1] 33584.1
+```
+
+---
+# Plot these lines
+
+
+```r
+ggplot(sim_d, aes(x, y)) +
+  geom_point() +
+  geom_abline(intercept = 0.5, slope = 3) +
+  geom_abline(intercept = 1, slope = 2) +
+  geom_abline(intercept = 1, slope = 3) +
+  geom_abline(intercept = 0.5, slope = 1.5)
+```
+
+![](w9p1-boosted-trees-1_files/figure-html/unnamed-chunk-12-1.png)&lt;!-- --&gt;
+
+---
+# View Cost Surface
+
+
+```r
+library(colorspace)
+grid &lt;- expand.grid(a = seq(-5, 10, 0.1), b = seq(-5, 5, 0.1))
+
+grid &lt;- grid %&gt;% 
+  mutate(cost = map2_dbl(a, b, mse)) 
+
+surface &lt;- ggplot(grid, aes(a, b)) +
+    geom_raster(aes(fill = cost)) +
+     scale_fill_continuous_sequential(palette = "Terrain")
+```
+
+---
+![](w9p1-boosted-trees-1_files/figure-html/show-cost-surface-1.png)&lt;!-- --&gt;
+
+---
+# 3D version
+
+```r
+library(rayshader)
+
+plot_gg(surface, multicore = TRUE)
+render_movie(filename = here::here("slides", "img", "cost-surface.mp4"), 
+             title_text = 'Cost surface', 
+             phi = 30 , theta = -45)
+```
+
+---
+background-image:url("img/cost-surface.mp4")
+backgroun-size:contain
+
+
+---
+# Find the minimum value
+
+In this case, we've just calculated the cost function for a big range of values. Pretty easy to find the minimum.
+
+
+```r
+grid %&gt;% 
+  arrange(cost) %&gt;% 
+  slice(1)
+```
+
+```
+##     a   b     cost
+## 1 5.1 1.4 16810.19
+```
+
+But this is only possible because the problem is so simple. It's not an *efficient* approach, and would quickly become infeasible.
+
+---
+# Gradient descent
+* Start at a random location, go downhill until you can't anymore
+
+* The gradient is determined by the partial derivative of the model parameters
+
+--
+Reminder: these are the partial derivatives for the MSE with an intercept and one slope
+
+$$
+   \begin{bmatrix}
+     \frac{d}{da}\\\\
+     \frac{d}{db}\\\\
+    \end{bmatrix}
+=
+   \begin{bmatrix}
+     \frac{1}{N} \sum -2(y_i - (a + bx_i)) \\\\
+     \frac{1}{N} \sum -2x_i(y_i - (a + bx_i)) \\\\
+    \end{bmatrix}
+$$
+---
+# Compute the gradient
+Let's write a function that computes the gradient for any point on the cost surface
+
+
+```r
+compute_gradient &lt;- function(a, b, x = sim_d$x, y = sim_d$y) {
+  n &lt;- length(y)
+  predictions &lt;- a + (b * x)
+  residuals &lt;- y - predictions
+  
+  da &lt;- (1/n) * sum(-2*residuals)
+  db &lt;- (1/n) * sum(-2*x*residuals)
+  
+  c(da, db)
+}
+```
+
+---
+# Take a step downhill
+We'll use the gradient to take a step in the steepest direction. The size of the step is determined by the learning rate.
+
+
+```r
+gd_step &lt;- function(a, b, 
+                    learning_rate = 0.1, 
+                    x = sim_d$x, 
+                    y = sim_d$y) {
+  grad &lt;- compute_gradient(a, b, x, y)
+  step_a &lt;- grad[1] * learning_rate
+  step_b &lt;- grad[2] * learning_rate
+  
+  c(a - step_a, b - step_b)
+}
+```
+
+---
+# Start "walking"
+
+
+```r
+walk_downhill &lt;- gd_step(0, 0) # random start location
+walk_downhill
+```
+
+```
+## [1] 1.0109553 0.2681521
+```
+
+--
+
+Take another step *from* the new location - recalculating the gradient and stepping in the steepest direction
+
+--
+
+```r
+walk_downhill &lt;- gd_step(walk_downhill[1],
+                         walk_downhill[2]) 
+walk_downhill
+```
+
+```
+## [1] 1.8211460 0.4856731
+```
+
+---
+# Keep walking
+
+
+```r
+walk_downhill &lt;- gd_step(walk_downhill[1],
+                         walk_downhill[2]) 
+walk_downhill
+```
+
+```
+## [1] 2.4704558 0.6620702
+```
+
+```r
+walk_downhill &lt;- gd_step(walk_downhill[1],
+                         walk_downhill[2]) 
+walk_downhill
+```
+
+```
+## [1] 2.9908419 0.8050772
+```
+
+```r
+walk_downhill &lt;- gd_step(walk_downhill[1],
+                         walk_downhill[2]) 
+walk_downhill
+```
+
+```
+## [1] 3.4079116 0.9209825
+```
+
+---
+# Watch it go!
+
+* Keep running the previous line to watch the parameter values update.
+
+* After a while, compare the result to the OLS solution, see if you need to keep going.
+
+
+---
+# Do it in a loop
+
+
+```r
+run &lt;- gd_step(0, 0)
+
+for(i in seq_len(500)) {
+  run &lt;- gd_step(run[1], run[2])
+}
+
+run
+```
+
+```
+## [1] 5.092374 1.413514
+```
+
+```r
+coef(lm(y ~ x))
+```
+
+```
+## (Intercept)           x 
+##    5.092374    1.413514
+```
+
+---
+# Try again, but save everything
+
+
+```r
+estimate_gradient &lt;- function(pars_tbl, 
+                              learning_rate = 0.1, 
+                              x = sim_d$x, 
+                              y = sim_d$y) {
+  
+  pars &lt;- gd_step(pars_tbl[["a"]], pars_tbl[["b"]],
+                  learning_rate)
+  
+  tibble(a = pars[1], b = pars[2], mse = mse(a, b, x, y))
+}
+```
+
+---
+
+```r
+# initialize
+grad &lt;- estimate_gradient(tibble(a = 0, b = 0))
+
+# loop through
+for(i in 2:50) {
+  grad[i, ] &lt;- estimate_gradient(grad[i - 1, ])
+}
+grad
+```
+
+```
+## # A tibble: 50 x 3
+##           a         b      mse
+##       &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;
+##  1 1.010955 0.2681521 34589.27
+##  2 1.821146 0.4856731 28248.48
+##  3 2.470456 0.6620702 24169.29
+##  4 2.990842 0.8050772 21544.96
+##  5 3.407912 0.9209825 19856.56
+##  6 3.742184 1.014897  18770.26
+##  7 4.010101 1.090974  18071.32
+##  8 4.224840 1.152586  17621.61
+##  9 4.396959 1.202471  17332.24
+## 10 4.534919 1.242853  17146.04
+## # … with 40 more rows
+```
+
+---
+# Plot learning curve
+
+
+```r
+grad &lt;- grad %&gt;% 
+  rowid_to_column("iteration")
+
+ggplot(grad, aes(iteration, mse)) +
+  geom_line()
+```
+
+![](w9p1-boosted-trees-1_files/figure-html/unnamed-chunk-20-1.png)&lt;!-- --&gt;
+
+
+---
+# Walk downhill
+
+```r
+ggplot(grid, aes(a, b)) +
+    geom_raster(aes(fill = cost)) +
+     colorspace::scale_fill_continuous_sequential(palette = "Terrain") +
+  guides(fill = "none") +
+  geom_point(data = grad,
+             color = "gray40",
+             alpha = 0.5,
+             stroke = 0)
+```
+
+![](w9p1-boosted-trees-1_files/figure-html/unnamed-chunk-21-1.png)&lt;!-- --&gt;
+
+---
+# Visualize change in slope
+
+
+```r
+ggplot(sim_d, aes(x, y)) +
+  geom_point(color = "#8beaa2") +
+  geom_abline(aes(intercept = a, slope = b),
+              data = grad,
+              color = "gray60",
+              size = 0.3) +
+  geom_abline(aes(intercept = a, slope = b),
+              data = grad[nrow(grad), ],
+              color = "magenta")
+```
+
+![](w9p1-boosted-trees-1_files/figure-html/unnamed-chunk-22-1.png)&lt;!-- --&gt;
+
+---
+# Animate it!
+
+
+```r
+library(gganimate)
+ggplot(grad) +
+  geom_point(aes(x, y), sim_d, 
+             color = "#8beaa2") +
+  geom_smooth(aes(x, y), sim_d, 
+              method = "lm", se = FALSE) +
+  geom_abline(aes(intercept = a,
+                  slope = b),
+              color = "#de4f60") +
+  transition_manual(frames = iteration)
+```
+
+---
+
+![](w9p1-boosted-trees-1_files/figure-html/slope-change-estimate-eval-1.gif)&lt;!-- --&gt;
+
+---
+background-image:url(img/poly-gd.gif)
+background-size: contain
+# Quick look at polynomial regression
+
+
+---
+# Why do this?
+* For algorithms like linear regression, we wouldn't. We have a closed-form solution to minimize the sum of the squared errors.
+
+
+--
+* For many algorithms, there is no closed-form solution. So - define a cost function, and go "downhill" until you reach a minimum
+
+
+--
+* Downside? Slower than a closed-form solution (have to estimate iteratively)
+
+--
+* Upside? We can minimize a cost function in a much more general way.
+
+---
+# Why spend so much time on this?
+
+This is how boosted trees work
+* Start by fitting a shallow tree
+* Subsequent tree splits are determined by the values are steepest in the gradient of the cost function
+* "Step" that direction by multiplying by the learning rate
+
+The learning rate is also called *shrinkage*, because it is reducing (shrinking) the speed at which the algorithm moves downhill (a value of 1.0 would be no shrinkage, but values greater that 0.3 are rare)
+
+---
+class: inverse center middle
+# Back to Boosted Trees
+
+---
+# Hyperparameters
+Standard boosted trees include the following four hyperparameters
+
+* Tree depth
+
+* Minimum `\(n\)` for a terminal node
+
+* `\(n\)` trees
+
+* Learning rate
+
+
+---
+# Tree depth
+* Just like standard decision trees, the tree depth is an important hyperparameter
+  
+
+--
+* However, with boosted trees we typically grow very shallow trees - an ensemble of "stumps" is common, and typical trees range from 3-6 splits
+
+
+--
+* Stumps are computationally efficient (but require more trees)
+
+* Deeper trees (more splits) may capture important interactions, but have a higher risk of overfitting
+
+
+--
+.b[Tree depth (number of splits) is a highly important hyperparameter]
+
+
+---
+# `\(n\)` trees
+
+* Unlike boosted trees and random forests, the number of trees .b[is] a hyperparameter
+
+
+--
+* The number of trees fit to the data will determine how much is learned 
+
+
+--
+### Probably obvious but...
+
+* Too few trees, and the model will underfit
+
+* Too many trees, and the model will overfit
+
+
+--
+This is a really important hyperparameter for standard decision trees
+
+Its optimization will depend on the tree depth
+
+.g[Shallower trees will learn less, and will be optimized at a higher number of total trees]
+
+---
+background-image:url(https://bradleyboehmke.github.io/HOML/10-gradient-boosting_files/figure-html/learning-rate-fig-1.png)
+background-size:contain
+# Learning rate
+
+* The size of the step taken at each iteration during gradient descent optimization
+
+
+.footnote[[Figure from HML](https://bradleyboehmke.github.io/HOML/gbm.html)]
+
+---
+# Another way to think of it
+
+.pull-left[
+![](https://miro.medium.com/max/800/1*qUPwF7Idt2yudQu8Sh1Kzw.gif)
+]
+
+
+--
+.pull-right[
+![](https://miro.medium.com/max/800/1*8mgMKa1dg93fUBk1oUG42A.gif)
+]
+
+---
+# Learning rate
+Also called .ital[shrinkage]
+* Values range from 0-1, but typically range from 0.001 to 0.3 
+
+--
+### Smaller values:
+* Mean less is learned from each tree, making it more robust to specific characteristics of any individual tree, and good generalizations
+* Make it easier to stop early &amp; avoid overfitting
+* Greater potential for "optimal" accuracy
+
+
+--
+### .b[But]
+
+* Also prone to local minima
+* Lead to a more computationally intensive model &amp; will require more trees
+
+---
+# Minimum `\(n\)` per terminal node
+
+* Technically a hyperparameter, but rarely comes into play
+
+* Trees are not grown sufficiently deep for it to matter (usually)
+
+---
+# Standard boosted tree tuning strategy
+
+1. Start out with a relatively high learning rate (I generally start at `\(0.1\)`) 
+
+2. Determine optimal `\(n\)` trees (for this learning rate)
+
+3. Fix tree `\(n\)` and tune learning rate
+
+4. Tune tree-specific parameters for chosen learning rate
+
+5. Fix tree-specific parameters, lower learning rate to see if you can make any further gains
+
+
+---
+class: inverse center middle
+# Extensions
+
+--
+Everything we've discussed so far would be considered a .b[standard] gradient boosted tree
+
+
+--
+The most common package for .b[standard] gradient boosted trees is [{gbm}](https://github.com/gbm-developers/gbm), which is not implemented in {tidymodels}. 
+
+
+--
+So... let's proceed with further complications!
+
+
+---
+# Stochastic GBM
+
+* Similar to bagged trees and random forests, introducing randomness to the sample and/or the features can sometimes help predictive accuracy
+  
+
+--
+* Sampling of cases is conducted for each tree
+
+    + Subsample between 50%-80% of the training data for each tree 
+
+.footnote[Note - other subsample values will regularly work better, but somewhere in this range should be your starting point]
+
+
+--
+* Sampling of features can be conducted by tree .b[or] by split (or actually by depth level)
+
+
+---
+# Model tuning
+Bokhmke &amp; Greenwell note:
+
+&gt; we have not seen strong interactions between the stochastic hyperparameters and the other boosting and tree-specific hyperparameters
+
+
+--
+Recommend evaluating random sampling proportions either with tree-specific hyperparameters, or after finalizing all the previous steps
+
+---
+# Hyperparameters
+We are now at .b[7] hyperparameters (and we're not done yet):
+
+
+* Tree depth
+
+* `\(n\)` trees
+
+* Learning rate
+
+* Minimum `\(n\)` for a terminal node
+
+* Subsample of rows
+
+* Subsample of columns for each .ital[tree]
+
+* Subsample of columns for each .ital[split] .g[Not implemented in tidymodels but easy to add]
+
+---
+# XGBoost
+
+e.b[X]treme .b[G]radient .b[Boost]ing
+
+
+--
+* Primary algorithm implemented in .ital[tidymodels] (that we're concerned with)
+
+
+--
+* Optimized distributed boosting (i.e., fast)
+
+
+--
+* Includes .b[even more] hyperparameter options, but we'll only mention a few of these
+
+
+---
+# Gamma (aka `loss_reduction`)
+
+* Controls tree depth
+
+* Specifies a minimum loss required for further splits
+
+* Scale dependent, and ranges from `\(0 - \infty\)`
+
+
+--
+* Boehmke &amp; Greenwell note that values between 1-20 are common
+
+
+--
+* L1 and L2 penalties are also available in {xgboost}, but have to be passed directly to the model function. The arguments are `alpha` and `gamma`, respectively.
+
+
+---
+# Early stopping
+
+* New/different way of controlling both the speed of your alogorithm .ital[and] the complexity of your model
+
+
+--
+* Because the number of trees is a hyperparamter, it helps guard against overfiting
+
+
+--
+### How?
+
+* Specify a number, `\(n\)`, to tell the algorithm to stop after the algorithm is not improving
+
+
+---
+# Tuning an XGBoost model
+* These additional regularizers change the way we approach tuning our model
+
+
+--
+* Instead of first assessing how many trees are needed, we'll specify a large number of treees to be built, but specify an early stopping rule
+
+
+--
+* Tune the learning rate, then tree-specific parameters, then stochastic components
+
+
+--
+* Retune learning rate if your find values that are really different than defaults
+
+
+--
+* If CV error suggests substantial overfitting, crank up regluarization
+
+
+---
+class: inverse center normal
+# Implementation with **{tidymodels}**
+I'm assuming we're mostly out of time
+
+---
+# {parsnip}
+* When we set a model, we just use `boost_tree()` for our model, and `set_engine("xgboost")` 
+
+* Essentially everything else is the same
+
+--
+
+```r
+boosted_tree_spec &lt;- boost_tree() %&gt;% 
+  set_engine("xgboost") %&gt;% 
+  set_mode("regression") %&gt;% # or classification, of course
+  set_args(...)
+```
+
+---
+# Quick note on performance
+By default, **{xgboost}** will use all the processors on your computer
+
+You can override this with the `nthread` argument when you `set_engine()`, e.g., `set_engine("xgboost", nthread = 2)`
+
+The `xgboost` package is *highly* performant compared to other similar algorithms, and it works great on the cluster
+
+---
+# Hyperparameters
+See the full documentation [here](https://parsnip.tidymodels.org/reference/boost_tree.html)
+
+We'll actually start fitting models on Wednesday
+
+![](img/boost_tree-params.png)
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script src="https://platform.twitter.com/widgets.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "atelier-dune-light",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
