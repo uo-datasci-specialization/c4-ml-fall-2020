@@ -1,0 +1,252 @@
+---
+title: "Lab 5"
+subtitle: "Random Forests/Bagging"
+author: "Key"
+date: "Assigned 11/18/20, Due 11/25/20"
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+    theme: "journal"
+    css: "website-custom.css"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE,
+                      cache = TRUE)
+
+library(tidyverse)
+library(tidymodels)
+library(baguette)
+library(future)
+
+library(vip)
+library(rpart.plot)
+
+theme_set(theme_minimal())
+```
+
+
+## Data
+
+Read in the `train.csv` data.
+
+* Because some of the models will take some time run, randomly sample 1% of the data (be sure to use `set.seed`).
+* Remove the *classification* variable.
+
+Read in the `fallmembershipreport_20192020.xlsx` data.
+
+* Select `Attending School ID`, `School Name`, and all columns that represent the race/ethnicity percentages for the schools (there is example code in recent class slides).
+
+Join the two data sets.
+
+If you have accessed outside data to help increase the performance of your models for the final project (e.g., [NCES](https://nces.ed.gov/)), you can read in and join those data as well.
+
+```{r}
+
+```
+
+## Split and Resample
+
+Split joined data from above into a training set and test set, stratified by the outcome `score`.
+
+Use 10-fold CV to resample the training set, stratified by `score`.
+
+```{r}
+
+```
+
+## Preprocess
+
+Create one `recipe` to prepare your data for CART, bagged tree, and random forest models.
+
+This lab could potentially serve as a template for your **Premilinary Fit 2**, or your final model prediction for the **Final Project**, so consider applying what might be your best model formula and the necessary preprocessing steps.
+
+```{r}
+
+
+```
+
+## Decision Tree
+
+1. Create a `parsnip` CART model using`{rpart}` for the estimation, tuning the cost complexity and minimum $n$ for a terminal node.
+```{r}
+
+```
+
+2. Create a `workflow` object that combines your `recipe` and your `parsnip` objects.
+```{r}
+
+```
+
+3. Tune your model with `tune_grid`
+* Use `grid = 10` to choose 10 grid points automatically
+* In the `metrics` argument, please include `rmse`, `rsq`, and `huber_loss`
+* Record the time it takes to run. You could use `{tictoc}`, or you could do something like:
+```{r, echo=TRUE, eval=FALSE}
+start_rf <- Sys.time()
+#code to fit model
+end_rf <- Sys.time()
+end_rf - start_rf
+```
+
+```{r}
+
+```
+
+4. Show the best estimates for each of the three performance metrics and the tuning parameter values associated with each.
+```{r}
+
+
+```
+
+## Bagged Tree
+
+1. Create a `parsnip` bagged tree model using`{baguette}` 
+* specify 10 bootstrap resamples (only to keep run-time down), and 
+* tune on `cost_complexity` and `min_n`
+
+```{r}
+
+```
+
+2. Create a `workflow` object that combines your `recipe` and your bagged tree model specification.
+```{r}
+
+```
+
+3. Tune your model with `tune_grid`
+* Use `grid = 10` to choose 10 grid points automatically
+* In the `metrics` argument, please include `rmse`, `rsq`, and `huber_loss`
+* In the `control` argument, please include `extract = function(x) extract_model(x)` to extract the model from each fit
+* `{baguette}` is optimized to run in parallel with the `{future}` package. Consider using `{future}` to speed up processing time (see the class slides)
+* Record the time it takes to run
+
+#### **Question: Before you run the code, how many trees will this function execute?**
+
+```{r}
+
+```
+
+4. Show the single best estimates for each of the three performance metrics and the tuning parameter values associated with each.
+
+```{r}
+
+```
+
+5. Run the `bag_roots` function below. Apply this function to the extracted bagged tree models from the previous step. This will output the feature at the root node for each of the decision trees fit. 
+
+```{r, echo=TRUE}
+
+bag_roots <- function(x){
+  x %>% 
+  select(.extracts) %>% 
+  unnest(cols = c(.extracts)) %>% 
+  mutate(models = map(.extracts,
+                  ~.x$model_df)) %>% 
+  select(-.extracts) %>% 
+  unnest(cols = c(models)) %>% 
+  mutate(root = map_chr(model,
+                     ~as.character(.x$fit$frame[1, 1]))) %>%
+  select(root)  
+}
+```
+
+6. Produce a plot of the frequency of features at the root node of the trees in your bagged model.
+
+
+```{r}
+
+
+```
+
+## Random Forest
+
+1. Create a `parsnip` random forest model using `{ranger}`
+* use the `importance = "permutation"` argument to run variable importance
+* specify 1,000 trees, but keep the other default tuning parameters
+
+```{r}
+
+```
+
+2. Create a `workflow` object that combines your `recipe` and your random forest model specification.
+```{r}
+
+```
+
+3. Fit your model 
+* In the `metrics` argument, please include `rmse`, `rsq`, and `huber_loss`
+* In the `control` argument, please include `extract = function(x) x` to extract the workflow from each fit
+* Record the time it takes to run
+
+```{r}
+
+```
+
+4. Show the single best estimates for each of the three performance metrics.
+
+```{r}
+
+```
+
+5. Run the two functions in the code chunk below. Then apply the `rf_roots` function to the results of your random forest model to output the feature at the root node for each of the decision trees fit in your random forest model. 
+
+```{r, echo=TRUE}
+
+rf_tree_roots <- function(x){
+  map_chr(1:1000, 
+           ~ranger::treeInfo(x, tree = .)[1, "splitvarName"])
+}
+
+rf_roots <- function(x){
+  x %>% 
+  select(.extracts) %>% 
+  unnest(cols = c(.extracts)) %>% 
+  mutate(fit = map(.extracts,
+                   ~.x$fit$fit$fit),
+         oob_rmse = map_dbl(fit,
+                         ~sqrt(.x$prediction.error)),
+         roots = map(fit, 
+                        ~rf_tree_roots(.))
+         ) %>% 
+  select(roots) %>% 
+  unnest(cols = c(roots))
+}
+
+
+```
+
+6. Produce a plot of the frequency of features at the root node of the trees in your bagged model.
+
+```{r}
+
+
+```
+
+7. Please explain why the bagged tree root node figure and the random forest root node figure are different.
+
+```{r}
+
+
+```
+
+8. Apply the `fit` function to your random forest `workflow` object and your **full** training data.
+In class we talked about the idea that bagged tree and random forest models use resampling, and one *could* use the OOB prediction error provided by the models to estimate model performance.
+
+* Record the time it takes to run
+* Extract the oob prediction error from your fitted object. If you print your fitted object, you will see a value for *OOB prediction error (MSE)*. You can take the `sqrt()` of this value to get the *rmse*. Or you can extract it by running: `sqrt(fit-object-name-here$fit$fit$fit$prediction.error)`.
+* How does OOB *rmse* here compare to the mean *rmse* estimate from your 10-fold CV random forest? How might 10-fold CV influence bias-variance?
+
+```{r}
+
+```
+
+## Compare Performance 
+
+Consider the four models you fit: (a) decision tree, (b) bagged tree, (c) random forest fit on resamples, and (d) random forest fit on the training data. Which model would you use for your final fit? Please consider the performance metrics as well as the run time, and briefly explain your decision. 
+
+
+
+
