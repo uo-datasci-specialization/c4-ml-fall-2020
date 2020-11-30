@@ -1,0 +1,147 @@
+
+R version 3.6.0 (2019-04-26) -- "Planting of a Tree"
+Copyright (C) 2019 The R Foundation for Statistical Computing
+Platform: x86_64-redhat-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> library(tidyverse)
+── Attaching packages ─────────────────────────────────────── tidyverse 1.3.0 ──
+✔ ggplot2 3.3.2     ✔ purrr   0.3.4
+✔ tibble  3.0.4     ✔ dplyr   1.0.2
+✔ tidyr   1.1.2     ✔ stringr 1.4.0
+✔ readr   1.4.0     ✔ forcats 0.5.0
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+> library(tidymodels)
+── Attaching packages ────────────────────────────────────── tidymodels 0.1.1 ──
+✔ broom     0.7.2      ✔ recipes   0.1.15
+✔ dials     0.0.9      ✔ rsample   0.0.8 
+✔ infer     0.5.3      ✔ tune      0.1.1 
+✔ modeldata 0.1.0      ✔ workflows 0.2.1 
+✔ parsnip   0.1.4      ✔ yardstick 0.0.7 
+── Conflicts ───────────────────────────────────────── tidymodels_conflicts() ──
+✖ scales::discard() masks purrr::discard()
+✖ dplyr::filter()   masks stats::filter()
+✖ recipes::fixed()  masks stringr::fixed()
+✖ dplyr::lag()      masks stats::lag()
+✖ yardstick::spec() masks readr::spec()
+✖ recipes::step()   masks stats::step()
+> library(xgboost)
+
+Attaching package: ‘xgboost’
+
+The following object is masked from ‘package:dplyr’:
+
+    slice
+
+> library(tictoc)
+> 
+> set.seed(41920)
+> d <- read_csv("data/train.csv") %>% 
++   select(-classification) %>% 
++   sample_frac(0.05)
+
+── Column specification ────────────────────────────────────────────────────────
+cols(
+  .default = col_character(),
+  id = col_double(),
+  attnd_dist_inst_id = col_double(),
+  attnd_schl_inst_id = col_double(),
+  enrl_grd = col_double(),
+  calc_admn_cd = col_logical(),
+  partic_dist_inst_id = col_double(),
+  partic_schl_inst_id = col_double(),
+  score = col_double(),
+  classification = col_double(),
+  ncessch = col_double(),
+  lat = col_double(),
+  lon = col_double()
+)
+ℹ Use `spec()` for the full column specifications.
+
+> 
+> splt <- initial_split(d)
+> train <- training(splt)
+> cv <- vfold_cv(train)
+> 
+> rec <- recipe(score ~ ., train) %>% 
++   step_mutate(tst_dt = as.numeric(lubridate::mdy_hms(tst_dt))) %>% 
++   update_role(contains("id"), -ncessch, new_role = "id vars") %>%
++   step_zv(all_predictors()) %>% 
++   step_novel(all_nominal()) %>% 
++   step_unknown(all_nominal()) %>% 
++   step_medianimpute(all_numeric(), -all_outcomes(), -has_role("id vars"))  %>% 
++   step_dummy(all_nominal(), -has_role("id vars"),
++              one_hot = TRUE) %>% 
++   step_nzv(all_predictors(), freq_cut = 995/5)
+> 
+> mod <- boost_tree() %>% 
++   set_engine("xgboost") %>% 
++   set_mode("regression") %>% 
++   set_args(stop_iter = 20) # early stopping
+> 
+> tune_lr <- mod %>% 
++   set_args(trees = 5000,
++            learn_rate = tune(),
++            stop_iter = 20)
+> 
+> wf_tune_lr <- workflow() %>% 
++   add_recipe(rec) %>% 
++   add_model(tune_lr)
+> 
+> ## xgb stuff
+> processed_train <- rec %>% 
++   prep() %>% 
++   bake(train)
+> 
+> features <- processed_train %>% 
++   select(-score, -contains("id"), -ncessch) %>% 
++   as.matrix()
+> 
+> outcome <- processed_train$score
+> 
+> 
+> ### Grid
+> grd <- expand.grid(learn_rate = seq(0.001, 0.3, length.out = 15))
+> 
+> # Tidymodels fit
+> tic()
+> tune_tree_lr <- tune_grid(wf_tune_lr, cv, grid = grd)
+> toc()
+12717.504 sec elapsed
+> 
+> # xgb fit
+> tic()
+> tune_tree_lr_xgb <- map(grd$learn_rate, ~ {
++   xgb.cv(
++     data = features,
++     label = outcome,
++     nrounds = 5000, # number of trees
++     objective = "reg:squarederror", # 
++     early_stopping_rounds = 20, 
++     nfold = 10,
++     params = list(eta = .x), #<<
++     verbose = FALSE
++   ) 
++ })
+> toc()
+1202.55 sec elapsed
+> 
+> 
+> proc.time()
+     user    system   elapsed 
+13910.089    18.813 13933.237 

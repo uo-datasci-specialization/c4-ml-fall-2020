@@ -1,0 +1,13 @@
+#!/bin/bash
+#SBATCH --partition=short        ### Partition see https://hpcrcf.atlassian.net/wiki/spaces/TCP/pages/7285967/Partition+List
+#SBATCH --job-name=xgb-raw  ### Job Name
+#SBATCH --output=xgb-raw.out        ### File in which to store job output
+#SBATCH --error=xgb-raw.err         ### File in which to store job error messages
+#SBATCH --time=0-10:00:00        ### Wall clock time limit in Days-HH:MM:SS
+#SBATCH --nodes=1                ### Number of nodes needed for the job
+#SBATCH --ntasks-per-node=1      ### Number of tasks to be launched per Node
+#SBATCH --cpus-per-task=8				 ### Number of cores for each task (if parallel computation can be utilized)
+#SBATCH --account=edld654        ### Account used for job submission
+ 
+R CMD BATCH --no-save --no-restore xgb-raw.R   # run your script
+
