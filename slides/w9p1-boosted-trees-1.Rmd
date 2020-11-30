@@ -1075,7 +1075,7 @@ e.b[X]treme .b[G]radient .b[Boost]ing
 
 
 --
-* Retune learning rate if your find values that are really different than defaults
+* Re-tune learning rate if your find values that are really different than defaults
 
 
 --

@@ -1,0 +1,588 @@
+---
+title: "Gradient Boosting (with trees)"
+subtitle: "Implementation"
+author: "Daniel Anderson "
+date: "Week 9, Class 2"
+output:
+  xaringan::moon_reader:
+    css: ["default", "uo", "uo-fonts", "hygge", "custom.css"]
+    lib_dir: libs
+    nature:
+      highlightStyle: atelier-dune-light
+      highlightLines: true
+      countIncrementalSlides: false
+      beforeInit: "https://platform.twitter.com/widgets.js"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(fig.width = 13, 
+                      message = FALSE, 
+                      warning = FALSE,
+                      echo = TRUE,
+                      cache = TRUE)
+
+library(tidyverse)
+
+update_geom_defaults('path', list(size = 3, color = "cornflowerblue"))
+update_geom_defaults('point', list(size = 5, color = "gray60"))
+theme_set(theme_minimal(base_size = 25))
+```
+
+# Agenda
+* Quick review on boosting
+* Implementation with **{tidymodels}** and using **{xgboost}** directly
+
+---
+# Quick group discussion
+
+* What is boosting? 
+
+* How does boosting compare to bagging?
+
+* What is gradient descent?
+
+* How does gradient descent relate to boosted trees?
+
+
+---
+# Hyperparameters
+
+Standard boosted tree models include four hyperparameters These are... ?
+
+
+--
+
+* Tree depth (number of splits)
+
+* Minimum $n$ for a terminal node
+
+* $n$ trees
+
+* Learning rate
+
+---
+# Quick example w/learning rate
+
+https://developers.google.com/machine-learning/crash-course/fitter/graph
+
+---
+# Stochastic parameters
+
+Using **{xgboost}** we can introduce additional randomness, including
+
+* Random proportion of the data for each tree
+
+* Random proportion of the columns by:
+  + tree
+  + level .g[Not implemented in tidymodels but easy to add]
+  + node (split) .g[Not implemented in tidymodels but easy to add]
+
+---
+# Other hyperparameters
+* Loss reduction
+  + stops growing a tree if change in cost function doesn't surpass a given threshold
+  
+* L1 & L2 penalties (probably only needed if you have evidence your model is overfitting)
+
+---
+# Early stopping
+While not technically a hyperparameter,  early stopping can help during model tuning
+
+* Early stopping works by evaluating the objective function against the validation set. If no improvements have been made after *n* iterations, stop the model fitting process.
+
+* Remember - optimal number of trees depends on other model parameters. Using early stopping allows the number of trees to be somewhat adaptive.
+
+* Once you've finalized your model, conduct your final fit (on your training data) and test fit with the actual number of trees you used (from the best model found through early stopping)
+
+---
+# Other options
+
+The [documentation](https://xgboost.readthedocs.io/en/latest/parameter.html) is the best place to look into **{xgboost}** further.
+
+There are even more hyperparameters, and even different model fitting procedures (e.g., [DART](https://xgboost.readthedocs.io/en/latest/tutorials/dart.html))
+
+
+---
+# Tuning an XGBoost model
+* Early stopping changes the way we approach tuning our model
+
+
+--
+* Instead of first assessing how many trees are needed, we'll specify a large number of trees to be built, but specify an early stopping rule
+
+
+--
+* Tune the learning rate, then tree-specific parameters, then stochastic components
+
+
+--
+* Re-tune learning rate if you find values that are really different than defaults
+
+
+--
+* If CV error suggests substantial overfitting, crank up regluarization
+
+---
+class: inverse center middle
+
+# Quick story time
+
+About the perils I've faced when trying to use **{xgboost}**
+
+---
+# Installing on talapas
+
+* The normal approach to installing packages doesn't work, because the newest version requires a C++ compiler 
+
+* Install the old version with the following lines
+
+```{r eval = FALSE}
+install.packages("data.table") # dependency
+install.packages("https://cran.r-project.org/src/contrib/Archive/xgboost/xgboost_0.90.0.2.tar.gz", type = "source")
+```
+
+This will install an older version of **{xgboost}**
+
+---
+# Implementation options
+
+* We've used **{tidymodels}** throughout the term, and we'll keep doing that here. However, I'll also show a few examples of working with **{xgboost}** directly
+
+---
+class: inverse center middle
+# Implementation w/{tidymodels}
+
+---
+# {parsnip}
+* When we set a model, we just use `boost_tree()` for our model, and `set_engine("xgboost")` 
+
+* Essentially everything else is the same
+
+--
+```{r eval = FALSE}
+boosted_tree_spec <- boost_tree() %>% 
+  set_engine("xgboost") %>% 
+  set_mode("regression") %>% # or classification, of course
+  set_args(...)
+```
+
+---
+# Quick note on performance
+By default, **{xgboost}** will use all the processors on your computer
+
+You can override this with the `nthread` argument when you `set_engine()`, e.g., `set_engine("xgboost", nthread = 2)`
+
+The `xgboost` package is *highly* performant compared to other similar algorithms, and it works great on the cluster
+
+---
+# Hyperparameters
+See the full documentation for the **{parsnip}** implementation [here](https://parsnip.tidymodels.org/reference/boost_tree.html)
+
+![](img/boost_tree-params.png)
+
+---
+# Load & split data
+
+```{r load-data}
+library(tidyverse)
+library(tidymodels)
+set.seed(41920)
+d <- read_csv(here::here("data", "train.csv")) %>% 
+  select(-classification) %>% 
+  sample_frac(0.05) # Just a tiny amount of the data to make it faster
+
+splt <- initial_split(d)
+train <- training(splt)
+cv <- vfold_cv(train)
+```
+
+---
+# Develop a basic recipe
+
+```{r recipe}
+rec <- recipe(score ~ ., train) %>% 
+  step_mutate(tst_dt = as.numeric(lubridate::mdy_hms(tst_dt))) %>% 
+  update_role(contains("id"), -ncessch, new_role = "id vars") %>%
+  step_zv(all_predictors()) %>% 
+  step_novel(all_nominal()) %>% 
+  step_unknown(all_nominal()) %>% 
+  step_medianimpute(all_numeric(), 
+                    -all_outcomes(), 
+                    -has_role("id vars"))  %>% 
+  step_dummy(all_nominal(), 
+             -has_role("id vars"),
+             one_hot = TRUE) %>% 
+  step_nzv(all_predictors(), freq_cut = 995/5)
+```
+
+---
+# Specify your model
+* Basically everything we've done so far (minus creating the $k$-fold cross-validation object) we would do whether we were using the **{parsnip}** wrapper or **{xgboost}** directly.
+
+* Let's start with **{tidymodels}**
+
+--
+
+```{r specify-model}
+mod <- boost_tree() %>% 
+  set_engine("xgboost") %>% 
+  set_mode("regression") %>% 
+  set_args(stop_iter = 20) # early stopping
+```
+
+---
+# Optional: Create a workflow
+### default model specs
+```{r default-wf}
+wf_df <- workflow() %>% 
+  add_recipe(rec) %>% 
+  add_model(mod)
+```
+
+---
+# Estimate
+
+### Fit to the resampled data
+```{r k-fold-default, cache = TRUE, message = FALSE}
+library(tictoc)
+tic()
+fit_default <- fit_resamples(wf_df, cv)
+toc()
+```
+
+--
+### Show performance
+
+```{r default-performance}
+collect_metrics(fit_default)
+```
+
+---
+# XGBoost directly
+We'll just use the default parameters again (note - I'm not sure the defaults are the same if you're not using **{parsnip}**; my guess is they are not).
+
+--
+### Bake your recipe
+* Similar to when we were working with the OOB samples when using bagged trees, we'll want to *bake* our training data and work with it directly.
+
+---
+# Bake
+```{r }
+processed_train <- rec %>% 
+  prep() %>% 
+  bake(train)
+```
+
+We then need to transform this into a *feature matrix*. Importantly, this *cannot* include the outcome. We also don't want to keep the other ID variables. So, we drop these variables and convert the rest to a matrix.
+
+```{r }
+features <- processed_train %>% 
+  select(-score, -contains("id"), -ncessch) %>% 
+  as.matrix()
+```
+
+--
+
+And we define the outcome separately.
+
+```{r }
+outcome <- processed_train$score
+```
+
+---
+# Cross validation
+The **{xgboost}** package will do the cross validation for you automatically with `xgboost::xgb.cv()`.
+
+```{r cache = TRUE}
+library(xgboost)
+tic()
+fit_default_xgb <- xgb.cv(
+  data = features,
+  label = outcome,
+  nrounds = 5000, # number of trees
+  objective = "reg:squarederror", # 
+  early_stopping_rounds = 20, 
+  nfold = 10,
+)
+toc()
+```
+
+---
+# Check out the metrics
+
+```{r}
+fit_default_xgb$best_iteration
+fit_default_xgb$evaluation_log %>% 
+  dplyr::slice(fit_default_xgb$best_iteration)
+```
+
+---
+# Full evaluation log
+
+```{r }
+fit_default_xgb$evaluation_log
+```
+
+---
+# Transform a bit
+
+```{r }
+log_def <- fit_default_xgb$evaluation_log %>% 
+  pivot_longer(-iter,
+               names_to = c("set", "metric", "measure"),
+               names_sep = "_") %>% 
+  pivot_wider(names_from = "measure",
+              values_from = "value")
+log_def
+```
+
+---
+# Learning curve
+```{r }
+ggplot(log_def, aes(iter, mean)) +
+  geom_line(aes(color = set)) 
+```
+
+---
+# Tuning
+### Step 1: Learning rate
+
+Let's start again with **{tidymodels}**
+
+```{r tune_lr, cache = TRUE}
+tune_lr <- mod %>% 
+  set_args(trees = 5000,
+           learn_rate = tune(),
+           stop_iter = 20)
+
+wf_tune_lr <- wf_df %>% 
+  update_model(tune_lr)
+
+grd <- expand.grid(learn_rate = seq(0.0001, 0.3, length.out = 30))
+
+tic()
+tune_tree_lr <- tune_grid(wf_tune_lr, cv, grid = grd)
+toc()
+```
+
+---
+# Evaluate
+
+```{r tune-plot-prep}
+to_plot <- tune_tree_lr %>% 
+  unnest(.metrics) %>% 
+  group_by(.metric, learn_rate) %>% 
+  summarize(mean = mean(.estimate, na.rm = TRUE)) %>% 
+  filter(learn_rate != 0.0001) 
+
+highlight <- to_plot %>% 
+  filter(.metric == "rmse" & mean == min(mean)) %>%
+  ungroup() %>% 
+  select(learn_rate) %>% 
+  semi_join(to_plot, .)
+```
+
+---
+# Plot
+```{r tune-plot1}
+ggplot(to_plot, aes(learn_rate, mean)) +
+  geom_point() +
+  geom_point(color = "#de4f69", data = highlight) +
+  facet_wrap(~.metric, scales = "free_y")
+```
+
+---
+# Check out metrics
+
+```{r }
+tune_tree_lr %>% 
+  collect_metrics() %>% 
+  group_by(.metric) %>% 
+  arrange(mean) %>% 
+  dplyr::slice(1)
+```
+
+
+---
+Let's look only at the model with the best RMSE
+
+```{r }
+best_rmse <- tune_tree_lr %>% 
+  select_best(metric = "rmse")
+
+tune_tree_lr %>% 
+  collect_metrics() %>% 
+  semi_join(best_rmse)
+```
+
+---
+# Try again w/XGBoost
+
+```{r cache = TRUE}
+tic()
+tune_tree_lr_xgb <- map(grd$learn_rate, ~ {
+ xgb.cv(
+   data = features,
+   label = outcome,
+   nrounds = 5000, # number of trees
+   objective = "reg:squarederror", # 
+   early_stopping_rounds = 20, 
+   nfold = 10,
+   params = list(eta = .x) #<<
+ ) 
+})
+toc()
+```
+
+---
+# Check out the best 
+
+```{r }
+map_df(tune_tree_lr_xgb, ~{
+  .x$evaluation_log %>% 
+  dplyr::slice(.x$best_iteration)
+}) %>% 
+  mutate(learning_rate = grd$learn_rate) %>% 
+  arrange(test_rmse_mean) %>% 
+  select(learning_rate, iter, test_rmse_mean, test_rmse_std)
+```
+
+---
+# Comparing times on the cluster
+I ran the same learning rate tuning code as above with 10% on talapas.  I requested the following resources
+
+
+---
+## Set learning rate, tune tree params
+
+```{r tune_tree_depth, cache = TRUE}
+tune_depth <- tune_lr %>% 
+  finalize_model(select_best(tune_tree_lr, "rmse")) %>% 
+  set_args(tree_depth = tune(),
+           min_n = tune())
+
+wf_tune_depth <- wf_df %>% 
+  update_model(tune_depth)
+
+grd <- grid_max_entropy(tree_depth(), min_n(), size = 30)
+
+tic()
+tune_tree_depth <- tune_grid(wf_tune_depth, cv, grid = grd)
+toc()
+```
+
+---
+# autoplot
+
+```{r autoplot-tree-depth}
+autoplot(tune_tree_depth)
+```
+
+---
+# show best
+```{r show-best-tree-depth}
+show_best(tune_tree_depth, "rmse")
+```
+
+---
+# Tune regularization
+
+```{r tune-reg}
+tune_reg <- tune_depth %>% 
+  finalize_model(select_best(tune_tree_depth, "rmse")) %>% 
+  set_args(loss_reduction = tune())
+
+wf_tune_reg <- wf_df %>% 
+  update_model(tune_reg)
+
+grd <- expand.grid(loss_reduction = seq(0, 100, 5))
+
+tic()
+tune_tree_reg <- tune_grid(wf_tune_reg, cv, grid = grd)
+toc()
+```
+
+---
+# autoplot
+```{r autoplot-tune-reg}
+autoplot(tune_tree_reg)
+```
+
+---
+# Show best
+```{r show-best-tune-reg}
+show_best(tune_tree_reg, "rmse")
+```
+
+---
+# Tune randomness
+
+```{r tune-randomness}
+tune_rand <- tune_reg %>%
+  finalize_model(select_best(tune_tree_reg, "rmse")) %>% 
+  set_args(mtry = tune(),
+           sample_size = tune())
+
+wf_tune_rand <- wf_df %>% 
+  update_model(tune_rand)
+
+grd <- grid_max_entropy(finalize(mtry(), juice(prep(rec))), 
+                        sample_size = sample_prop(), 
+                        size = 30)
+
+tic()
+tune_tree_rand <- tune_grid(wf_tune_rand, cv, grid = grd)
+toc()
+```
+
+---
+# autoplot
+```{r autoplot-rand}
+autoplot(tune_tree_rand)
+```
+
+---
+# Show best
+```{r show-best-rand}
+show_best(tune_tree_rand, "rmse")
+```
+
+---
+# Check learning rate one more time 
+* Note how long this takes -- why?
+```{r final-mod}
+check_lr <- tune_rand %>% 
+  finalize_model(select_best(tune_tree_rand, "rmse")) %>% 
+  set_args(learn_rate = tune())
+
+wf_final_lr <- wf_df %>% 
+  update_model(check_lr)
+
+tic()
+final_lr <- tune_grid(wf_final_lr, cv, grid = 30)
+toc()
+```
+
+---
+# autoplot
+```{r final-lr-autoplot}
+autoplot(final_lr)
+```
+
+---
+# show best
+```{r final-lr-show-best}
+show_best(final_lr, "rmse")
+```
+
+
+---
+# Wrapping up
+
+* gradient boosted trees are a really powerful out-of-the-box predictive model
+
+--
+* proper tuning can make them hard to beat, particularly for tabular data. But of course, this will not always be the case.
+
+--
+* For more info on {xgboost}, see [the documentation](https://xgboost.readthedocs.io/en/latest/)
