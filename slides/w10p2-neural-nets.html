@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>Neural net babysteps</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Daniel Anderson" />
+    <script src="libs/header-attrs-2.4/header-attrs.js"></script>
+    <link href="libs/remark-css-0.0.1/default.css" rel="stylesheet" />
+    <link href="libs/remark-css-0.0.1/uo.css" rel="stylesheet" />
+    <link href="libs/remark-css-0.0.1/uo-fonts.css" rel="stylesheet" />
+    <link href="libs/remark-css-0.0.1/hygge.css" rel="stylesheet" />
+    <link rel="stylesheet" href="custom.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# Neural net babysteps
+## An intro with Keras and Tensorflow in R
+### Daniel Anderson
+### Week 10, Class 2
+
+---
+
+
+
+
+# Agenda
+* Some house cleaning sort of stuff
+
+* Intro to neural nets/deep learning
+
+* Estimation with keras
+
+* Challenge: Tweaking model capacity
+
+* Learning rates (and optimizers with adaptive learning rates)
+
+---
+# Acknowledgements, Resources, &amp; Disclaimers
+* Most of this content comes from a deep learning training I attended with Bradley Boehmke 
+
+* All of the content from that training [is freely available](https://github.com/rstudio-conf-2020/dl-keras-tf)
+
+* The [keras](https://keras.rstudio.com) website is also a great place to start learning
+
+* I'm very new to this .g[but it's very cool]
+
+---
+class: inverse center middle
+# Before we really get started
+
+---
+# Reading the docs
+There are some kind of weird conventions that made the docs a little more difficult for me to read than I would expect. 
+
+### Object unpacking
+
+
+```r
+library(zeallot)
+my_name &lt;- c("Daniel", "Anderson")
+
+c(first, last) %&lt;-% my_name
+
+first
+```
+
+```
+## [1] "Daniel"
+```
+
+```r
+last
+```
+
+```
+## [1] "Anderson"
+```
+
+---
+# Tensors
+When you read about tensors, you should just think vectors, matrices, and arrays
+
+--
+* 1D Tensor = vector
+
+
+--
+* 2D Tensor = matrix
+
+
+--
+* 3/4/5D Tensor = 3/4/5-dimensional array
+
+---
+# Visual examples: 1D Tensor
+![](img/1D_tensor.png)
+
+---
+# Visual examples: 2D Tensor
+![](img/2D_tensor.png)
+
+---
+# Visual examples: 3D Tensor
+![](img/3D_tensor.png)
+
+---
+# Visual examples: 4D Tensor
+![](img/4D_tensor.png)
+
+---
+# Visual examples: 5D Tensor
+
+&lt;img src="img/5D_tensor.jpg" width="60%" /&gt;
+
+
+---
+class: inverse center middle
+# Intro to neural nets &amp; deep learning
+
+---
+# What is deep learning?
+
+* Neural net with two or more hidden layers
+
+--
+&lt;img src="https://miro.medium.com/max/1400/1*3fA77_mLNiJTSgZFhYnU0Q@2x.png" width="80%" /&gt;
+
+
+.footnote[Image source: https://medium.com/@ksusorokina/image-classification-with-convolutional-neural-networks-496815db12a8]
+
+---
+# Deep learning use cases
+* Voice/facial recognition
+
+* Flaw detection (engine sounds)
+
+* Recommender algorithms (e.g., Amazon, Spotify, Netflix)
+
+* Machine vision (e.g., object detection)
+
+* Feature extraction 
+
+
+--
+One of my favorites - the scanner function in the [goodreads](https://www.goodreads.com) mobile app
+
+
+---
+# Why deep learning
+.pull-left[
+* Automatic feature extraction
+
+* Flexibility
+
+* Tends to work better than many alternative methods for high-dimensional and unstructured data
+
+    - texts, images, audio recording
+]
+
+--
+
+.pull-right[
+![](img/prob-solve-flex.png)
+]
+
+---
+# What is it?
+* I like to think of neural nets as, basically, linear regression
+
+
+--
+* Linear regression models can be fit through a neural net framework
+
+
+--
+### The following are equivalent
+
+$$
+y\_{i} = \alpha + b\_{1}x\_{1i} + b\_{2}x\_{2i} + b\_{3}x\_{3i} + e
+$$
+
+&lt;img src="img/perceptron.png" width="50%" /&gt;
+
+---
+# Vocabulary
+* .b[Coefficients] in regression = .r[weights] in neural nets
+
+
+--
+* .b[Intercept] in regression = .r[bias] in neural nets
+
+
+--
+* .b[Link function] in regression = .r[Activation function] in neural nets
+
+---
+# Feed forward network
+
+* Fundamental building block for most neural network models
+
+--
+* Implemented in *{keras}* with `layer_dense`
+
+
+---
+# A basic model
+
+
+```r
+library(keras)
+network &lt;- keras_model_sequential() %&gt;% 
+  layer_dense() %&gt;% # hidden layer
+  layer_dense() # output layer
+```
+
+
+--
+
+![](img/basic_mlp.png)
+
+
+---
+# A deeper model
+
+```r
+network &lt;- keras_model_sequential() %&gt;% 
+  layer_dense() %&gt;% # hidden layer 1
+  layer_dense() %&gt;% # hidden layer 2
+  layer_dense() %&gt;% # hidden layer 3
+  layer_dense() # output layer
+```
+
+--
+
+![](img/basic_feedforward.png)
+
+---
+# Arguments to the layers
+* `units`: The number of perceptrons in the layer
+
+* `activation`: The activation function for the perceptrons in the layer
+
+* `input_shape`: The number of columns in the design matrix (i.e., matrix including all the predictor variables)
+
+
+--
+The `units` and `activation` should be specified for each layer, but the `input_shape` only needs to be specified for the first layer - subsequent layers will layers will be determined automatically
+
+---
+# Activation
+Each perceptron goes through a two-step process
+
+![](img/perceptron1.png)
+
+---
+# Linear transformation
+Multiply the weights by the `\(x_i\)` values and sum (i.e., linear regression)
+
+![](img/perceptron2.png)
+
+---
+# Activation
+Transform the output according to a function
+
+![](img/perceptron3.png)
+
+---
+# Transformations
+* The most common activation functions for .b[hidden layers] is ReLU (which we'll get to momentarily), but others exist
+
+* For output layers: 
+    + Regression problems: Linear/identity activation function 
+    + Binary classification: Sigmoidal activation function
+    + Multiclass classification: Softmax transformation (transforms to probability of each class)
+
+
+
+--
+
+.center[
+
+&lt;img src="img/sigmoid.jpg" width="40%" /&gt;
+
+]
+
+---
+# Activation functions for hidden layers
+
+* Must be non-linear (otherwise the multiple layers collapse to a single layer, see [here](https://ai.stackexchange.com/questions/5493/what-is-the-purpose-of-an-activation-function-in-neural-networks/5521#5521) for an explanation)
+
+* ReLU is most common and should be your default
+
+* Other options include sigmoid and tanh
+
+---
+# ReLU
+Rectified Linear Unit: Super simple - more so than other activation functions
+
+$$
+ReLU = max(0, z)
+$$
+![](w10p2-neural-nets_files/figure-html/relu-plot-1.png)&lt;!-- --&gt;
+
+
+---
+# How does this work?
+* Remember, we have densely connected perceptrons
+
+* Multiple ReLU activations can result in highly complex shapes
+
+![](img/origami.gif)
+
+---
+# Benefits of ReLU
+Sparse activation
+* Sigmoid/tanh activations will essentially never be exactly zero, meaning all neurons will always "fire"
+
+* "Lighter" networks
+
+* More computationally efficient than other activation functions
+
+
+--
+### However
+* "dying ReLu problem" (perceptrons stop responding) when we would like them not to
+
+* Should .r[never] be used for output layers - only hidden layers
+
+---
+# How neural nets estimate
+![](img/forward_pass.png)
+
+---
+# How neural nets estimate
+![](img/forward_pass2.png)
+
+---
+# How neural nets estimate
+![](img/forward_pass3.png)
+
+---
+# How neural nets estimate
+![](img/forward_pass4.png)
+
+---
+# Backpropogation
+The weights are updated iteratively to minimize the loss score 
+
+![](img/backward_pass.png)
+
+---
+# Optimization
+We have to use an optimizer to determine the best weights to minimize the loss score
+
+![](img/backward_pass2.png)
+
+---
+# Batch Gradient Descent
+This is what we talked about last week
+
+
+![](w10p2-neural-nets_files/figure-html/gd-1.png)&lt;!-- --&gt;
+
+---
+# Stochastic Gradient Descent
+
+![](w10p2-neural-nets_files/figure-html/sgd-1.gif)&lt;!-- --&gt;
+
+Gradient is evaluated and updated from a single randomly selected observation
+
+---
+# Mini-batch Gradient Descent
+
+![](w10p2-neural-nets_files/figure-html/mini-batch-gd-1.gif)&lt;!-- --&gt;
+
+---
+# Pros/Cons
+.pull-left[
+.Large[Batch GD]
+* .gr[Fewer updates]
+* .gr[Often leads to quicker convergence]
+* .r[Scales poorly]
+* .r[Prone to local minima]
+
+
+.Large[Stochastic GD]
+* .gr[Noisy gradient - avoids local minima]
+* .r[computationally inefficient]
+* .r[Noisy gradient can lead to difficulty converging]
+
+]
+
+--
+
+.pull-right[
+.Large[Mini-batch GD]
+* .gr[Balances prior two]
+* .r[One more hyperparameter]
+* Usually used with `\(2^s\)`
+]  
+---
+# Epochs
+Number of times the algorithm goes through the entire training data
+
+![](w10p2-neural-nets_files/figure-html/unnamed-chunk-1-1.gif)&lt;!-- --&gt;
+
+
+---
+class: inverse center middle
+
+# Let's estimate!
+
+Launch R Studio, pull up the script I've prepared for you, and let's do it together!
+
+---
+# Linear regression
+First, let's use a neural net to replicate a linear regression problem
+
+### Simulate some data
+
+
+```r
+library(tidyverse)
+n &lt;- 1000   # n observations
+b &lt;- 30     # intercept
+a &lt;- 5      # slope
+
+set.seed(123)
+(sim &lt;- tibble(
+  x = runif(n, min = -1, max = 1),
+  y = b + a*x + rnorm(n)
+))
+```
+
+```
+## # A tibble: 1,000 x 2
+##              x        y
+##          &lt;dbl&gt;    &lt;dbl&gt;
+##  1 -0.4248450  27.27388
+##  2  0.5766103  31.88935
+##  3 -0.1820462  30.11655
+##  4  0.7660348  34.58124
+##  5  0.8809346  32.89551
+##  6 -0.9088870  25.36042
+##  7  0.05621098 29.38511
+##  8  0.7848381  31.85344
+##  9  0.1028700  30.66447
+## 10 -0.08677053 29.48694
+## # … with 990 more rows
+```
+
+---
+# Visualize relation
+
+
+```r
+ggplot(sim, aes(x, y)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+![](w10p2-neural-nets_files/figure-html/viz-sim-1.png)&lt;!-- --&gt;
+
+
+---
+# Estimate w/OLS
+
+
+```r
+ols_model &lt;- lm(y ~ x, sim)
+coef(ols_model)
+```
+
+```
+## (Intercept)           x 
+##   30.011774    4.970831
+```
+
+```r
+sigma(ols_model)
+```
+
+```
+## [1] 1.001877
+```
+
+---
+# Estimate w/Keras
+* We need to specify `x` as a matrix
+
+* We'll fit a feed-forward sequential neural net with a single perceptron (no hidden layers)
+
+
+```r
+x &lt;- matrix(sim$x, ncol = 1)
+
+library(keras)
+mod &lt;- keras_model_sequential() %&gt;% 
+  layer_dense(units = 1, 
+              activation = "linear",
+              input_shape = ncol(x))
+```
+
+---
+# Compile the model
+* Specify the loss function and optimizer
+
+* Note there's no assignment (but it compiles anyway)
+
+
+```r
+mod %&gt;% 
+  compile(optimizer = "sgd", # stochastic gradient descent
+          loss = "mse") # mean square error
+```
+
+---
+# Fit
+* Specify the data, batch size (assuming mini-batch gradient descent), epochs, and validation split
+
+* Note - if you run the following more than once, the model will get updated each time (starting from previous best)
+
+
+```r
+history &lt;- mod %&gt;% 
+  fit(x, sim$y, # data
+      batch_size = 16, # mini-batch size
+      epochs = 20, # n times through full training data
+      validation_split = .2)
+```
+
+---
+# Check learning
+
+
+```r
+plot(history)
+```
+
+---
+# Compare results
+
+.pull-left[
+
+```r
+get_weights(mod)
+coef(ols_model)
+```
+]
+
+.pull-right[
+
+```r
+history
+sigma(ols_model)
+```
+]
+
+---
+# A more complicated model
+Simulate data that follow a sin curve
+
+
+```r
+set.seed(123)
+df &lt;- tibble(
+  x = seq(from = -1, to = 2 * pi, length = n),
+  e = rnorm(n, sd = 0.2),
+  y = sin(x) + e
+)
+```
+
+---
+# Visualize relation
+
+
+```r
+ggplot(df, aes(x, y)) +
+  geom_point() +
+  geom_line(aes(y = sin(x)))
+```
+
+![](w10p2-neural-nets_files/figure-html/plot-sin-data-1.png)&lt;!-- --&gt;
+
+---
+# Model capacity
+Your model capacity is controlled by the model .b[*depth*] (number of layers) and the model .b[*width*] (number of perceptrons in the layer)
+
+
+--
+Generally, increasing the depth of a model will result in bigger performance gains than increasing the width of a model
+
+---
+# Best practices 
+
+.pull-left[
+* Layers are typically *tunnel* or *funnel* shaped
+* Nodes are powers of 2 (e.g., 4, 8, 16, 32)
+* Consistent nodes per layer (tunnel) can make tuning easier
+* Final hidden layer should have more nodes than the output layer
+]
+
+.pull-right[
+&lt;img src="img/model_capacity_depth.png" width="960" height="50%" /&gt;&lt;img src="img/model_capacity_funnel.png" width="960" height="50%" /&gt;
+]
+---
+# Challenge
+
+* Fit a model to the sine wave data
+* Vary the model capacity (width and depth) and batch size
+* After each model completes, run the following code to see how close your model was to the true relation
+* Note: `df` is your simulated data (from 4 slides previous); `model` is your model fit; `x` is the variable from the simulated data
+
+
+```r
+df %&gt;%
+  mutate(pred = predict(model, x) %&gt;% as.vector()) %&gt;%
+  ggplot(aes(x, y)) +
+  geom_point() +
+  geom_line(aes(y = sin(x)),
+            color = "cornflowerblue") +
+  geom_line(aes(y = pred), 
+            lty = "dashed", 
+            color = "red")
+```
+
+---
+class: inverse center middle
+# How close did you get?
+### And how did you get there?
+
+---
+# Last topic for today
+### Learning rates
+
+--
+As we talked about with boosted trees, learning rate is an important hyperparameter
+
+![](img/lr.png)
+
+---
+# Adaptive learning rates
+Change the learning rate based on the steepness of the gradient
+
+.pull-left[
+* Simplest approach - add .b[momentum] to the learning rate. Momentum is just a fraction of the previous step added to the current step. 
+
+* Helps to go "downhill" faster
+]
+
+.pull-right[
+![](img/momentum.gif)
+]
+
+
+---
+# Other adaptive LR parameters
+### Reduce learning rate on plateau
+
+* If no improvements have been made after .b[X] iterations, reduce the learning rate to help find the absolute minimum for that area (i.e., so you don't keep jumping over it)
+
+
+--
+* The .b[X] is called the .ital[patience] parameter
+
+
+--
+* Can also use callbacks for things like early stopping
+
+---
+# Example
+
+
+```r
+x &lt;- matrix(df$x, ncol = 1)
+
+sin_mod &lt;- keras_model_sequential() %&gt;% 
+  layer_dense(units = 256, activation = "relu", input_shape = ncol(x)) %&gt;% 
+  layer_dense(units = 256, activation = "relu") %&gt;% 
+  layer_dense(units = 256, activation = "relu") %&gt;% 
+  layer_dense(units = 1, activation = "linear") 
+
+sin_mod %&gt;% 
+* compile(optimizer = optimizer_sgd(lr = 0.01, momentum = 0.9),
+          loss = "mse")
+
+history &lt;- sin_mod %&gt;% 
+  fit(x, df$y,
+      batch_size = 16, 
+      epochs = 50,
+      validation_split = .2,
+*     callbacks = callback_reduce_lr_on_plateau(factor = 0.1,
+*                                               patience = 5))
+```
+
+---
+# Uh oh
+When we run this code with our previous model specification, we get weird predictions. Why? What happened?
+
+```r
+df %&gt;%
+  mutate(pred = predict(sin_mod, x) %&gt;% as.vector()) %&gt;%
+  ggplot(aes(x, y)) +
+  geom_point() +
+  geom_line(aes(y = sin(x)),
+            color = "cornflowerblue") +
+  geom_line(aes(y = pred), 
+            lty = "dashed", 
+            color = "red")
+```
+
+---
+# We forgot to randomly sort 
+
+
+```r
+*df2 &lt;- df[sample(seq_len(nrow(df))), ]
+*x &lt;- matrix(df2$x, ncol = 1) #
+
+sin_mod &lt;- keras_model_sequential() %&gt;% 
+  layer_dense(units = 256, activation = "relu", input_shape = ncol(x)) %&gt;% 
+  layer_dense(units = 256, activation = "relu") %&gt;% 
+  layer_dense(units = 256, activation = "relu") %&gt;% 
+  layer_dense(units = 256, activation = "relu") %&gt;% 
+  layer_dense(units = 1, activation = "linear") 
+
+sin_mod %&gt;% 
+  compile(optimizer = optimizer_sgd(lr = 0.01, momentum = 0.9),
+          loss = "mse")
+
+history &lt;- sin_mod %&gt;% 
+  fit(x, df2$y,
+      batch_size = 16, 
+      epochs = 50,
+      validation_split = .2,
+      callbacks = callback_reduce_lr_on_plateau(factor = 0.1, 
+                                                patience = 5)) 
+```
+
+&lt;!-- --- --&gt;
+&lt;!-- # New fit --&gt;
+
+&lt;!-- ```{r plot-sin2, echo = FALSE, eval = FALSE} --&gt;
+&lt;!-- df %&gt;% --&gt;
+&lt;!--   mutate(pred = predict(sin_mod, x) %&gt;% as.vector()) %&gt;% --&gt;
+&lt;!--   ggplot(aes(x, y)) + --&gt;
+&lt;!--   geom_point() + --&gt;
+&lt;!--   geom_line(aes(y = sin(x)), --&gt;
+&lt;!--             color = "cornflowerblue") + --&gt;
+&lt;!--   geom_line(aes(y = pred),  --&gt;
+&lt;!--             lty = "dashed",  --&gt;
+&lt;!--             color = "red") --&gt;
+&lt;!-- ``` --&gt;
+
+
+---
+# Other adaptive optimizers
+* RMSprop: adds exponential decay of mean squared gradients
+    + similar effect to momentum, but different method
+    
+* Adam: RMSprop + momentum
+
+* For more details, see https://ruder.io/optimizing-gradient-descent/
+
+
+---
+class: inverse center middle
+# Any time left?
+MNIST challenge
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script src="https://platform.twitter.com/widgets.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "atelier-dune-light",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>

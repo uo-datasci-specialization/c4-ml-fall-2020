@@ -101,7 +101,8 @@ When we work with keras:
 * use `%<-%` for ___object unpacking___ (see `?zeallot::%<-%`)
 
 ```{r extract-train-test}
-c(c(train_images, train_labels), c(test_images, test_labels)) %<-% mnist
+c(c(train_images, train_labels), 
+  c(test_images, test_labels)) %<-% mnist
 
 # the above is the same as
 # train_images <- mnist$train$x
@@ -211,7 +212,7 @@ The model should have the following characteristics:
   function for the output layer
 * Make sure you specify your output layer to have 10 perceptrons (one for each
   digit you are predicting)
-* Start by optimizing with stochastic gradient descent with the defalut batch 
+* Start by optimizing with stochastic gradient descent with the default batch 
   size (32). Vary the batch size and add momentum to your learning rate to see
   if you can improve fit.
 * Use callbacks to reduce the learning rate on a plateau
@@ -220,31 +221,31 @@ The model should have the following characteristics:
 
 **Hint** Careful about not overwriting objects. When you compile, for example,
 you are actually updating the model object even if you're not re-assigning it.
-This means you can't re-run a model by just running re-running the fit. You 
+This means you can't re-run a model by just re-running the fit. You 
 have to first re-define the model, then re-compile it, then re-fit it.
 
 ```{r model}
 model <- keras_model_sequential() %>%
-  layer_dense(units = 512, activation = "relu", input_shape = ncol(train_images)) %>%
-  layer_dropout(0.3) %>%                            # regularization parameter
-  layer_dense(units = 512, activation = "relu") %>%
-  layer_dropout(0.3) %>%                           # regularization parameter
-  layer_dense(units = 10, activation = "softmax")
+  layer_dense(units = ___, 
+              activation = ___, 
+              input_shape = ___) %>%
+  layer_dense(units = ___, 
+              activation = ___)
 
 model %>% compile(
   loss = "categorical_crossentropy",
-  optimizer = optimizer_sgd(lr = 0.1, momentum = 0.9),
+  optimizer = ___,
   metrics = "accuracy"
 )
 
 history <- model %>% fit(
-  train_images, train_labels,
+  ___, ___,
   validation_split = 0.2,
-  batch_size = 128,
-  epochs = 50,
+  batch_size = ___,
+  epochs = ___,
   callback = list(
-    callback_early_stopping(patience = 3, restore_best_weights = TRUE, min_delta = 0.0001),
-    callback_reduce_lr_on_plateau(patience = 1, factor = 0.1)
+    ___,
+    ___
     )
   )
 ```
