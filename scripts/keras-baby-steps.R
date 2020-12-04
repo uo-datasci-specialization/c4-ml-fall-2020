@@ -39,13 +39,13 @@ sim_mod %>%
           loss = "mse") # mean square error
 
 # fit using mini-batch gradient descent
-history <- mod %>% 
+history <- sim_mod %>% 
   fit(x, sim$y, # data
       batch_size = 16, # mini-batch size
       epochs = 20) # n times through full training data
 
 # check coefs w/OLS solution
-get_weights(mod)
+get_weights(sim_mod)
 coef(ols_model)
 history
 sigma(ols_model)
@@ -64,7 +64,8 @@ df <- tibble(
 # plot true relation
 ggplot(df, aes(x, y)) +
   geom_point() +
-  geom_line(aes(y = sin(x)))
+  geom_line(aes(y = sin(x)),
+            color = "cornflowerblue")
 
 # Try to fit a model that approximates the true function
 
