@@ -49,27 +49,27 @@ features <- processed_train %>%
 ### Grid
 grd <- expand.grid(learn_rate = seq(0.001, 0.2, length.out = 20))
 
-# # Tidymodels fit
-# tic()
-# tune_tree_lr_tm <- tune_grid(mod, rec, cv, grid = grd)
-# toc()
-
-# saveRDS(tune_tree_lr_tm, "tune_tree_lr_tm.Rds")
-
-# xgb fit
+# Tidymodels fit
 tic()
-tune_tree_lr_xgb <- map(grd$learn_rate, ~ {
- xgb.cv(
-   data = features,
-   label = processed_train$score,,
-   nrounds = 5000, # number of trees
-   objective = "reg:squarederror", # 
-   early_stopping_rounds = 20, 
-   nfold = 10,
-   verbose = FALSE,
-   params = list(eta = .x) # learning rate = eta
- ) 
-})
+tune_tree_lr_tm <- tune_grid(mod, rec, cv, grid = grd)
 toc()
 
-saveRDS(tune_tree_lr_xgb, "tune_tree_lr_xgb.Rds")
+saveRDS(tune_tree_lr_tm, "tune_tree_lr_tm.Rds")
+
+# # xgb fit
+# tic()
+# tune_tree_lr_xgb <- map(grd$learn_rate, ~ {
+#  xgb.cv(
+#    data = features,
+#    label = processed_train$score,,
+#    nrounds = 5000, # number of trees
+#    objective = "reg:squarederror", # 
+#    early_stopping_rounds = 20, 
+#    nfold = 10,
+#    verbose = FALSE,
+#    params = list(eta = .x) # learning rate = eta
+#  ) 
+# })
+# toc()
+
+# saveRDS(tune_tree_lr_xgb, "tune_tree_lr_xgb.Rds")
